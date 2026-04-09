@@ -84,9 +84,18 @@ class RaveEffect(AudioEffect):
         model_name: str = "percussion",
         temperature: float = 1.0,
         noise: float = 0.0,
+        mix: float = 1.0,
         **kwargs,
     ) -> AudioBuffer:
-        """Process audio through RAVE."""
+        """Process audio through RAVE.
+
+        Args:
+            audio: Input audio buffer.
+            model_name: Pretrained model to use.
+            temperature: Scale latent vectors (>1 = more extreme, <1 = subtle).
+            noise: Amount of random noise to add to latent space (0-1).
+            mix: Wet/dry blend (0.0 = fully dry/original, 1.0 = fully wet/RAVE).
+        """
         model = load_rave_model(model_name)
 
         with torch.no_grad():
@@ -102,7 +111,19 @@ class RaveEffect(AudioEffect):
 
             x_hat = model.decode(z)
 
-        return AudioBuffer.from_model_output(x_hat, sample_rate=audio.sample_rate)
+        wet = AudioBuffer.from_model_output(x_hat, sample_rate=audio.sample_rate)
+
+        if mix >= 1.0:
+            return wet
+
+        # Blend dry (original) and wet (RAVE) signals
+        dry = mono
+        # Match lengths — RAVE output may differ slightly in length
+        min_len = min(dry.num_samples, wet.num_samples)
+        dry_samples = dry.samples[:, :min_len]
+        wet_samples = wet.samples[:, :min_len]
+        blended = dry_samples * (1.0 - mix) + wet_samples * mix
+        return AudioBuffer(samples=blended, sample_rate=audio.sample_rate)
 
     def register_command(self, app: typer.Typer) -> None:
         """Register the rave subcommand."""
@@ -139,6 +160,14 @@ class RaveEffect(AudioEffect):
                     help="Random noise in latent space (0-1)",
                 ),
             ] = 0.0,
+            mix: Annotated[
+                float,
+                typer.Option(
+                    "--mix",
+                    "-w",
+                    help="Wet/dry blend (0.0=original, 0.5=half, 1.0=full RAVE)",
+                ),
+            ] = 1.0,
             sweep: Annotated[
                 Optional[str],
                 typer.Option(
@@ -158,16 +187,17 @@ class RaveEffect(AudioEffect):
             )
 
             if sweep:
-                self._run_sweep(audio, output, model, temperature, noise_amount, sweep)
+                self._run_sweep(audio, output, model, temperature, noise_amount, mix, sweep)
             else:
                 console.print(
-                    f"[bold]Processing:[/bold] rave model={model} temp={temperature} noise={noise_amount}"
+                    f"[bold]Processing:[/bold] rave model={model} temp={temperature} noise={noise_amount} mix={mix}"
                 )
                 result = self.process(
                     audio,
                     model_name=model,
                     temperature=temperature,
                     noise=noise_amount,
+                    mix=mix,
                 )
                 save_audio(result, output)
                 console.print(f"[green]Saved:[/green] {output}")
@@ -181,6 +211,7 @@ class RaveEffect(AudioEffect):
         model: str,
         temperature: float,
         noise_amount: float,
+        mix: float,
         sweep: str,
     ) -> None:
         """Run a parameter sweep and save grid of outputs."""
@@ -195,6 +226,7 @@ class RaveEffect(AudioEffect):
                 "model_name": model,
                 "temperature": temperature,
                 "noise": noise_amount,
+                "mix": mix,
             }
             kwargs[param_name] = val
 

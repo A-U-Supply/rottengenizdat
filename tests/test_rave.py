@@ -56,6 +56,26 @@ class TestRaveEffect:
         result = effect.process(sine_wave, model_name="percussion", noise=0.5)
         assert isinstance(result, AudioBuffer)
 
+    @patch("rottengenizdat.plugins.rave.load_rave_model")
+    def test_mix_blends_dry_and_wet(self, mock_load, mock_model, sine_wave: AudioBuffer):
+        """mix=0 should return the original, mix=1 should return full RAVE."""
+        mock_load.return_value = mock_model
+        effect = RaveEffect()
+
+        # mix=0 → pure original (dry)
+        dry = effect.process(sine_wave, model_name="percussion", mix=0.0)
+        mono_input = sine_wave.to_mono()
+        min_len = min(dry.num_samples, mono_input.num_samples)
+        assert torch.allclose(dry.samples[:, :min_len], mono_input.samples[:, :min_len])
+
+        # mix=1 → pure RAVE (wet), should NOT match original
+        wet = effect.process(sine_wave, model_name="percussion", mix=1.0)
+        assert not torch.allclose(wet.samples[:, :min_len], mono_input.samples[:, :min_len])
+
+        # mix=0.5 → halfway blend
+        half = effect.process(sine_wave, model_name="percussion", mix=0.5)
+        assert isinstance(half, AudioBuffer)
+
 
 class TestAvailableModels:
     def test_known_models_listed(self):
