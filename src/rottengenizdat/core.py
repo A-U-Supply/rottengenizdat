@@ -54,10 +54,36 @@ class AudioBuffer:
         return cls(samples=tensor, sample_rate=sample_rate)
 
 
+_VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v"}
+
+
+def _extract_audio(path: Path) -> Path:
+    """Extract audio from a video file to a temporary WAV using ffmpeg."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            f"Cannot read '{path.name}': ffmpeg is required for video files but was not found on PATH."
+        )
+    tmp = Path(tempfile.mktemp(suffix=".wav"))
+    result = subprocess.run(
+        ["ffmpeg", "-i", str(path), "-vn", "-acodec", "pcm_s16le", "-ar", "44100", "-ac", "1", "-y", str(tmp)],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"ffmpeg failed to extract audio from '{path.name}': {result.stderr.decode(errors='replace').strip()}"
+        )
+    return tmp
+
+
 def load_audio(path: Path, target_sr: int | None = None) -> AudioBuffer:
     """Load an audio file and optionally resample.
 
     Uses soundfile for I/O; torchaudio.functional.resample for resampling.
+    Video files (mp4, webm, etc.) are converted to WAV via ffmpeg first.
     """
     path = Path(path)
     if not path.exists():
@@ -67,7 +93,22 @@ def load_audio(path: Path, target_sr: int | None = None) -> AudioBuffer:
             f"'{path}' is a directory, not an audio file. "
             f"Did you mean: rotten recipe run {path}/<name>.toml ...?"
         )
-    data, sr = sf.read(str(path), dtype="float32", always_2d=True)
+
+    tmp_path = None
+    read_path = path
+    if path.suffix.lower() in _VIDEO_EXTS:
+        tmp_path = _extract_audio(path)
+        read_path = tmp_path
+
+    try:
+        data, sr = sf.read(str(read_path), dtype="float32", always_2d=True)
+    except Exception:
+        if tmp_path and tmp_path.exists():
+            tmp_path.unlink()
+        raise
+    if tmp_path and tmp_path.exists():
+        tmp_path.unlink()
+
     # soundfile returns (num_samples, channels); transpose to (channels, num_samples)
     samples = torch.from_numpy(data.T)
     buf = AudioBuffer(samples=samples, sample_rate=sr)
