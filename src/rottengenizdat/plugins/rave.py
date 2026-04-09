@@ -215,9 +215,14 @@ class RaveEffect(AudioEffect):
 
             # Build dim mask (True = dims to leave untouched)
             if dims is not None:
+                n_latent = z.shape[1]
                 dim_indices = [int(d) for d in dims.split(",")]
-                mask = torch.ones(z.shape[1], dtype=torch.bool)
-                mask[dim_indices] = False
+                dim_indices = [i for i in dim_indices if i < n_latent]
+                if not dim_indices:
+                    dims = None  # all requested dims out of range, skip masking
+                else:
+                    mask = torch.ones(n_latent, dtype=torch.bool)
+                    mask[dim_indices] = False
 
             if temperature != 1.0:
                 z = z * temperature
