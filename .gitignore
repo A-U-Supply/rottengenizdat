@@ -4,3 +4,7 @@ __pycache__/
 dist/
 build/
 .venv/
+*.wav
+*.mp3
+*.flac
+*.ogg
