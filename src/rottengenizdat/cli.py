@@ -49,9 +49,15 @@ onto discarded hospital X-ray film.
 Start with a single effect, then graduate to chains and recipes:
 
   rotten rave input.wav -m vintage -o out.wav
-  rotten rave input.wav -m nasa -t 1.5 -n 0.2 -o out.wav
+  rotten rave input.wav input2.wav -m nasa -t 1.5 --mode splice -o out.wav
   rotten chain input.wav "rave -m percussion" "rave -m vintage" -o out.wav
   rotten recipe run recipes/fever-dream.toml input.wav -o out.wav
+
+Pull random samples from Slack #sample-sale:
+
+  rotten recipe run recipes/bone-xray.toml --sample-sale-count 3 -o out.wav
+  rotten sample-sale refresh
+  rotten config set slack.token xoxb-YOUR-TOKEN
 
 Run any command with -h to see detailed help and examples.
 """

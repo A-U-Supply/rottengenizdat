@@ -45,6 +45,44 @@ rotten rave input.wav -m vintage --sweep temperature=0.3,0.7,1.0,1.5,2.0 -o grid
 
 Run any command with `-h` for detailed help: `rotten -h`, `rotten rave -h`, `rotten recipe -h`.
 
+## Multi-Input
+
+Feed multiple files into any command. They're combined before processing:
+
+```
+rotten rave a.wav b.wav c.wav -m percussion --mode splice -o out.wav
+rotten recipe run recipes/bone-xray.toml a.wav b.wav --mode concat -o out.wav
+rotten recipe run recipes/fever-dream.toml a.wav b.wav --mode independent -o out/
+```
+
+**Modes:**
+- `splice` (default) — chop all inputs into random segments, shuffle, reassemble
+- `concat` — join inputs end-to-end in order
+- `independent` — process each input separately, output to a directory
+
+Splice parameters: `--splice-min 0.25 --splice-max 4.0` (seconds)
+
+## #sample-sale Integration
+
+Pull random audio/video from your Slack #sample-sale channel:
+
+```
+# Configure once
+rotten config set slack.token xoxb-YOUR-TOKEN
+rotten config set slack.channel C0XXXXXXX
+
+# Fetch and use samples
+rotten recipe run recipes/fever-dream.toml --sample-sale-count 3 -o out.wav
+rotten rave --sample-sale -m vintage -o out.wav
+
+# Manage the cache
+rotten sample-sale refresh        # sync index from Slack
+rotten sample-sale list           # show indexed samples
+rotten sample-sale clear          # delete cached files
+```
+
+Samples are cached locally (~/.cache/rottengenizdat/samples/). The index syncs incrementally on each use. Supports file attachments (direct download) and links (via yt-dlp).
+
 ## How It Works
 
 RAVE (Realtime Audio Variational autoEncoder) encodes audio into a compact latent space, where each model has learned to represent sound based on what it was trained on. The latent space typically has 16 dimensions and a temporal axis. rottengenizdat lets you manipulate this latent representation — scaling, adding noise, quantizing, reversing, shuffling — then decode it back to audio. Even a straight round-trip with no manipulation produces uncanny results, because the model reinterprets your audio through its own training data.
