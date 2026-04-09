@@ -276,11 +276,13 @@ Recipes are TOML files that store named chains for easy reuse. rottengenizdat sh
 
 barely-there                              fever-dream
 needle-drop                            bitcrushed-god
-ghost-in-the-machine                    drunk-choir
-haunted-dub                            time-sick
-organ-donor                           hall-of-mirrors
-space-sickness                       parallel-universe
-nature-documentary                   bone-xray
+ghost-in-the-machine                speaking-in-tongues
+haunted-dub                            drunk-choir
+organ-donor                            time-sick
+space-sickness                       hall-of-mirrors
+nature-documentary                   parallel-universe
+choir-practice                         bone-xray
+choir-of-ghosts                      congregation
 ```
 
 ### Recipe Catalog
@@ -306,6 +308,14 @@ nature-documentary                   bone-xray
 **hall-of-mirrors** — Same model (vintage) three times in sequence, temperature creeping up. A photocopy of a photocopy of a photocopy. *(sequential)*
 
 **drunk-choir** — Two VCTK voice models + isis, each with noise. Your track sung back by confused neural networks. *(branch)*
+
+**choir-practice** — Drunk-choir's bigger sibling. Five VCTK voices at staggered temperatures plus isis. Dense, warm, unmistakably choral. *(branch)*
+
+**congregation** — Maximum vocal density. Seven voices from four voice-like models (VCTK, isis, sol_ordinario, sol_full), each emphasizing different latent dimensions so they don't collapse into mush. A wall of neural singers. *(branch)*
+
+**speaking-in-tongues** — Drunk-choir with the inebriation cranked to blackout. Six voices, high temperature and noise, with shuffle and reverse. Discord and glossolalia, barely holding together. *(branch)*
+
+**choir-of-ghosts** — Pass through one voice model first, then stack four more on top. Voices built on voices — dense, smeared, layered deep. Like hearing a choir through the memory of another choir. *(sequential)*
 
 **time-sick** — Temporal nausea: reverse the latent, shuffle it into chunks, quantize. Structure is there but the timeline is having a seizure. *(sequential)*
 
