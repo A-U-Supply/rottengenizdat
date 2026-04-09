@@ -33,6 +33,10 @@ class TestRaveEffect:
     @patch("rottengenizdat.plugins.rave.load_rave_model")
     def test_temperature_scales_latents(self, mock_load, mock_model, sine_wave: AudioBuffer):
         mock_load.return_value = mock_model
+        # Use a deterministic encode so we can verify scaling
+        fixed_z = torch.ones(1, 16, 21)
+        mock_model.encode = MagicMock(return_value=fixed_z.clone())
+
         decoded_z = []
         def capture_decode(z):
             decoded_z.append(z.clone())
@@ -42,6 +46,8 @@ class TestRaveEffect:
         effect = RaveEffect()
         effect.process(sine_wave, model_name="percussion", temperature=2.0)
         assert len(decoded_z) == 1
+        # z should have been scaled by temperature (2.0)
+        assert torch.allclose(decoded_z[0], fixed_z * 2.0)
 
     @patch("rottengenizdat.plugins.rave.load_rave_model")
     def test_latent_noise_adds_noise(self, mock_load, mock_model, sine_wave: AudioBuffer):
