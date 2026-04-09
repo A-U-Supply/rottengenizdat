@@ -81,3 +81,26 @@ def save_audio(buf: AudioBuffer, path: Path) -> None:
     # soundfile expects (num_samples, channels); transpose from (channels, num_samples)
     data: np.ndarray = buf.samples.numpy().T
     sf.write(str(path), data, buf.sample_rate)
+
+
+def concat_buffers(buffers: list[AudioBuffer]) -> AudioBuffer:
+    """Concatenate multiple AudioBuffers end-to-end.
+
+    Buffers with different sample rates are resampled to match the first
+    buffer's sample rate. All buffers are converted to mono before concatenation.
+
+    Args:
+        buffers: Non-empty list of AudioBuffers to concatenate in order.
+
+    Returns:
+        A single AudioBuffer containing all inputs joined end-to-end.
+    """
+    if not buffers:
+        raise ValueError("concat_buffers requires at least one buffer")
+    target_sr = buffers[0].sample_rate
+    parts: list[torch.Tensor] = []
+    for buf in buffers:
+        b = buf.resample(target_sr).to_mono()
+        parts.append(b.samples)
+    joined = torch.cat(parts, dim=1)
+    return AudioBuffer(samples=joined, sample_rate=target_sr)
