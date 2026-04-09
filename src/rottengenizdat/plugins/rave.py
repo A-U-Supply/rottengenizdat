@@ -68,6 +68,103 @@ def load_rave_model(
     return model
 
 
+_RAVE_HELP = """\
+RAVE variational autoencoder — latent space audio mangling.
+
+Encode audio into a neural network's latent space, twist the knobs,
+decode. Even a straight round-trip (no knobs) produces uncanny results
+because the model reinterprets your audio through whatever it was
+trained on. A percussion model turns everything into ghost drums.
+A voice model makes your synths sing.
+
+MODELS — each was trained on different audio and imparts its character:
+
+  percussion ........ Drum/percussion instruments. Makes everything
+                      rhythmic and percussive. Good default for beats.
+  vintage ........... Warm analog character — tape hiss, vinyl crackle
+                      energy. Great for subtle lo-fi textures.
+  VCTK .............. Human speech (VCTK corpus). Gives audio a vocal,
+                      mouth-shaped quality. Eerie on non-vocal input.
+  nasa .............. NASA mission recordings — radio chatter, space
+                      noise, telemetry. Alien and otherworldly.
+  musicnet .......... Multi-instrument classical (MusicNet dataset).
+                      Orchestral reinterpretation of anything.
+  isis .............. Instrumental sounds. Adds tonal, resonant color.
+  sol_ordinario ..... Solo strings, ordinario technique. Bowed string
+                      character — good for haunting, organic textures.
+  sol_full .......... Solo strings, full technique range. Broader string
+                      vocabulary than sol_ordinario.
+  sol_ordinario_fast  Fast variant of sol_ordinario. Same character,
+                      quicker inference.
+  darbouka_onnx ..... Darbouka drum. Middle-Eastern percussion color.
+
+KNOBS — manipulate the latent space between encode and decode:
+
+  -t, --temperature   Scale latent vectors. 1.0 = identity. <1 pulls
+                      toward the model's average (subtle, smoothed).
+                      >1 pushes extremes (chaotic, distorted).
+                      0.5 = gentle, 1.5 = aggressive, 2.0+ = destroyed.
+
+  -n, --noise         Add gaussian noise to latent space (0.0-1.0).
+                      Injects randomness. 0.1 = texture, 0.3 = haze,
+                      0.8 = static wash. Stacks with temperature.
+
+  -w, --mix           Wet/dry blend. 0.0 = fully original, 1.0 = fully
+                      RAVE (default). 0.3 = ghostly undertone,
+                      0.5 = half-and-half, 0.7 = mostly transformed.
+
+  -d, --dims          Comma-separated latent dimension indices to
+                      manipulate (e.g. "0,3,7"). Unselected dims keep
+                      their original encoded values. Models typically
+                      have 16 dims. Lower dims (0-3) tend to carry more
+                      structural info; higher dims (12-15) carry finer
+                      detail. Omit to manipulate all dims.
+
+  -r, --reverse       Flip the temporal axis of the latent. The model
+                      hears your audio backwards but decodes forward —
+                      not the same as reversing the audio file.
+
+  --shuffle N         Cut the latent timeline into chunks of N frames
+                      and shuffle them randomly. Creates temporal
+                      dislocation — the structure fragments.
+                      4-8 = mild stutter, 2-3 = heavy chop.
+
+  -q, --quantize      Snap latent values to a grid of this step size.
+                      Crushes the continuous latent into steps.
+                      0.1 = subtle, 0.5 = crunchy, 1.0 = obliterated.
+
+  --sweep             Generate a grid of outputs sweeping one parameter.
+                      e.g. --sweep temperature=0.5,1.0,1.5,2.0
+                      Output path (-o) becomes a directory.
+
+EXAMPLES:
+
+  Straight round-trip (no knobs — still transforms!):
+    rotten rave input.wav -m vintage -o out.wav
+
+  Subtle lo-fi warmth:
+    rotten rave input.wav -m vintage -t 0.7 -d 0,1 -w 0.4 -o warm.wav
+
+  Aggressive percussion reinterpretation:
+    rotten rave input.wav -m percussion -t 1.5 -o drums.wav
+
+  Alien vocal texture:
+    rotten rave input.wav -m VCTK -t 1.3 -n 0.2 -o eerie.wav
+
+  Space noise with reversed latent:
+    rotten rave input.wav -m nasa -t 1.4 -r -o space.wav
+
+  Only mangle high dimensions, keep structure:
+    rotten rave input.wav -m musicnet -d 8,9,10,11,12,13,14,15 -t 1.5 -o detail.wav
+
+  Bitcrushed latent:
+    rotten rave input.wav -m percussion -q 0.8 -t 1.5 -o crushed.wav
+
+  Explore temperature range:
+    rotten rave input.wav -m vintage --sweep temperature=0.3,0.7,1.0,1.5,2.0 -o grid/
+"""
+
+
 class RaveEffect(AudioEffect):
     """RAVE — Realtime Audio Variational autoEncoder.
 
@@ -76,7 +173,7 @@ class RaveEffect(AudioEffect):
     """
 
     name = "rave"
-    description = "RAVE variational autoencoder — latent space audio mangling"
+    description = _RAVE_HELP
 
     def process(
         self,
@@ -167,17 +264,18 @@ class RaveEffect(AudioEffect):
         @app.command(name=self.name, help=self.description)
         def rave_command(
             input_file: Annotated[
-                Path, typer.Argument(help="Input audio file")
+                Path, typer.Argument(help="Input audio file (wav, flac, mp3, etc.)")
             ],
             output: Annotated[
-                Path, typer.Option("--output", "-o", help="Output file path")
+                Path, typer.Option("--output", "-o", help="Output file path (or directory when using --sweep)")
             ] = Path("output.wav"),
             model: Annotated[
                 str,
                 typer.Option(
                     "--model",
                     "-m",
-                    help=f"Pretrained model: {', '.join(AVAILABLE_MODELS)}",
+                    help="Pretrained RAVE model. Each imparts its own character. "
+                    f"Choices: {', '.join(AVAILABLE_MODELS)}",
                 ),
             ] = "percussion",
             temperature: Annotated[
@@ -185,7 +283,9 @@ class RaveEffect(AudioEffect):
                 typer.Option(
                     "--temperature",
                     "-t",
-                    help="Latent scaling (>1 extreme, <1 subtle)",
+                    help="Scale latent vectors. <1 = subtle/smoothed, "
+                    "1.0 = identity, >1 = extreme/chaotic. "
+                    "Try 0.5-0.8 for gentle, 1.2-2.0 for aggressive",
                 ),
             ] = 1.0,
             noise_amount: Annotated[
@@ -193,7 +293,8 @@ class RaveEffect(AudioEffect):
                 typer.Option(
                     "--noise",
                     "-n",
-                    help="Random noise in latent space (0-1)",
+                    help="Gaussian noise added to latent space (0.0-1.0). "
+                    "0.1 = texture, 0.3 = haze, 0.8 = wash",
                 ),
             ] = 0.0,
             mix: Annotated[
@@ -201,7 +302,8 @@ class RaveEffect(AudioEffect):
                 typer.Option(
                     "--mix",
                     "-w",
-                    help="Wet/dry blend (0.0=original, 0.5=half, 1.0=full RAVE)",
+                    help="Wet/dry blend. 0.0 = original, 0.3 = ghostly, "
+                    "0.5 = half, 1.0 = full RAVE",
                 ),
             ] = 1.0,
             dims: Annotated[
@@ -209,26 +311,42 @@ class RaveEffect(AudioEffect):
                 typer.Option(
                     "--dims",
                     "-d",
-                    help="Latent dims to manipulate (e.g. 0,3,7). Others stay original.",
+                    help="Latent dims to manipulate (e.g. '0,1,2,3'). "
+                    "Others keep original values. Lower dims = structure, "
+                    "higher = detail. Omit for all dims",
                 ),
             ] = None,
             reverse: Annotated[
                 bool,
-                typer.Option("--reverse", "-r", help="Reverse latent time axis"),
+                typer.Option(
+                    "--reverse",
+                    "-r",
+                    help="Flip latent time axis — not the same as reversing the audio file",
+                ),
             ] = False,
             shuffle_chunks: Annotated[
                 int,
-                typer.Option("--shuffle", help="Shuffle latent in chunks of N frames"),
+                typer.Option(
+                    "--shuffle",
+                    help="Shuffle latent in chunks of N frames. "
+                    "4-8 = mild stutter, 2-3 = heavy chop",
+                ),
             ] = 0,
             quantize_step: Annotated[
                 float,
-                typer.Option("--quantize", "-q", help="Quantize latent to step size"),
+                typer.Option(
+                    "--quantize",
+                    "-q",
+                    help="Snap latent values to grid of this step size. "
+                    "0.1 = subtle, 0.5 = crunchy, 1.0 = obliterated",
+                ),
             ] = 0.0,
             sweep: Annotated[
                 Optional[str],
                 typer.Option(
                     "--sweep",
-                    help="Sweep a parameter, e.g. temperature=0.5,1.0,1.5",
+                    help="Generate grid of outputs sweeping one parameter. "
+                    "e.g. 'temperature=0.5,1.0,1.5,2.0'. Output path becomes a directory",
                 ),
             ] = None,
         ) -> None:
