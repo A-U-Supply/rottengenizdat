@@ -164,3 +164,37 @@ class TestChainMultiInput:
         ])
         assert result.exit_code == 0, result.stdout
         assert (tmp_path / "out.wav").exists()
+
+
+class TestIntegrationMultiInput:
+    def test_splice_three_files_through_dry(self, tmp_path: Path):
+        """End-to-end: three files spliced and run through dry recipe."""
+        sr = 44100
+        for i, name in enumerate(["x.wav", "y.wav", "z.wav"]):
+            buf = AudioBuffer(
+                samples=torch.ones(1, sr) * (i + 1), sample_rate=sr
+            )
+            save_audio(buf, tmp_path / name)
+
+        recipe = tmp_path / "dry.toml"
+        recipe.write_text(
+            '[recipe]\nname = "dry"\nmode = "sequential"\n'
+            '[[steps]]\neffect = "dry"\n'
+        )
+
+        result = runner.invoke(app, [
+            "recipe", "run", str(recipe),
+            str(tmp_path / "x.wav"),
+            str(tmp_path / "y.wav"),
+            str(tmp_path / "z.wav"),
+            "--mode", "splice",
+            "--splice-min", "0.1",
+            "--splice-max", "0.5",
+            "-o", str(tmp_path / "spliced.wav"),
+        ])
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "spliced.wav").exists()
+        # Output should contain all input samples (3 seconds total)
+        from rottengenizdat.core import load_audio as _load
+        out = _load(tmp_path / "spliced.wav")
+        assert out.num_samples == sr * 3
