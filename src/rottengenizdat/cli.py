@@ -20,8 +20,11 @@ from rottengenizdat.sample_sale import (
     load_index,
     sync_index,
     clear_cache,
+    download_sample,
+    pick_random_samples,
 )
-from rottengenizdat.core import load_audio, save_audio
+from rottengenizdat.inputs import InputMode, combine_inputs
+from rottengenizdat.core import AudioBuffer, load_audio, save_audio
 from rottengenizdat.plugin import discover_plugins
 from rottengenizdat.recipe import (
     load_recipe,
@@ -239,69 +242,115 @@ app.add_typer(recipe_app)
 @recipe_app.command(name="run")
 def recipe_run(
     recipe_file: Annotated[Path, typer.Argument(help="Path to recipe TOML file")],
-    input_file: Annotated[Path, typer.Argument(help="Input audio file")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path("output.wav"),
+    input_files: Annotated[Optional[list[Path]], typer.Argument(help="Input audio/video files")] = None,
+    output: Annotated[Path, typer.Option("--output", "-o", help="Output file or directory (for --mode independent)")] = Path("output.wav"),
+    sample_sale: Annotated[bool, typer.Option("--sample-sale", "-ss", help="Include random samples from #sample-sale")] = False,
+    sample_sale_count: Annotated[int, typer.Option("--sample-sale-count", help="How many samples to pull (implies --sample-sale)")] = 0,
+    mode: Annotated[Optional[str], typer.Option("--mode", help="Input combination mode: splice (default for multi), concat, independent")] = None,
+    splice_min: Annotated[float, typer.Option("--splice-min", help="Min splice segment duration in seconds")] = 0.25,
+    splice_max: Annotated[float, typer.Option("--splice-max", help="Max splice segment duration in seconds")] = 4.0,
 ) -> None:
-    """Run a saved recipe against an input file.
+    """Run a saved recipe against one or more input files.
 
-    Loads a recipe TOML, prints the chain of effects, and processes the
-    input audio. Sequential recipes feed each step into the next. Branch
-    recipes run all steps on the original and mix with per-step weights.
+    Supports multiple local files as positional args and/or random samples
+    from #sample-sale. When multiple inputs are provided, they are combined
+    according to --mode (default: splice).
 
     Examples:
 
-      rotten recipe run recipes/barely-there.toml vocal.wav -o gentle.wav
-      rotten recipe run recipes/fever-dream.toml drums.wav -o destroyed.wav
-      rotten recipe run my-custom-recipe.toml loop.wav -o out.wav
+      rotten recipe run recipes/fever-dream.toml input.wav -o out.wav
+      rotten recipe run recipes/bone-xray.toml a.wav b.wav --mode concat -o out.wav
+      rotten recipe run recipes/barely-there.toml --sample-sale-count 3 -o out.wav
     """
     if not recipe_file.exists():
         console.print(f"[red]Recipe file not found: {recipe_file}[/red]")
         raise typer.Exit(1)
-    if not input_file.exists():
-        console.print(f"[red]File not found: {input_file}[/red]")
+
+    # Resolve all inputs
+    all_buffers: list[AudioBuffer] = []
+    all_names: list[str] = []
+
+    for f in (input_files or []):
+        if not f.exists():
+            console.print(f"[red]File not found: {f}[/red]")
+            raise typer.Exit(1)
+        all_buffers.append(load_audio(f))
+        all_names.append(f.stem)
+
+    # Sample-sale samples
+    ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
+    if ss_count > 0:
+        import rottengenizdat.sample_sale as _ss
+        console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
+        index = _ss.sync_index()
+        picks = _ss.pick_random_samples(index, ss_count)
+        for entry in picks:
+            console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
+            path = _ss.download_sample(entry)
+            all_buffers.append(load_audio(path))
+            all_names.append(entry.filename or entry.id)
+
+    if not all_buffers:
+        console.print("[red]No input files provided. Pass audio files or use --sample-sale.[/red]")
         raise typer.Exit(1)
 
+    # Load recipe
     recipe = load_recipe(recipe_file)
     meta = recipe.get("recipe", {})
     name = meta.get("name", "untitled")
-    mode = meta.get("mode", "sequential")
+    recipe_mode = meta.get("mode", "sequential")
     raw_steps = recipe.get("steps", [])
+    console.print(f"[bold]Recipe:[/bold] {name} (mode={recipe_mode}, {len(raw_steps)} step(s))")
 
-    console.print(f"[bold]Recipe:[/bold] {name} (mode={mode}, {len(raw_steps)} step(s))")
+    # Combine inputs
+    input_mode = InputMode.resolve(mode, len(all_buffers))
+    if len(all_buffers) > 1:
+        console.print(f"[bold]Combining {len(all_buffers)} inputs[/bold] (mode={input_mode.value})")
+    combined = combine_inputs(all_buffers, input_mode, splice_min=splice_min, splice_max=splice_max)
 
-    console.print(f"[bold]Loading:[/bold] {input_file}")
-    audio = load_audio(input_file)
-    console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")
-
+    # Run pipeline
     step_pairs = recipe_steps_to_kwargs(raw_steps)
     plugins = discover_plugins()
 
-    if mode == "branch":
-        from rottengenizdat.chain import mix_buffers
-        outputs = []
-        weights = []
-        for effect_name, kwargs in step_pairs:
-            if effect_name not in plugins:
-                console.print(f"[red]Unknown effect: {effect_name}[/red]")
-                raise typer.Exit(1)
-            w = kwargs.pop("weight", 1.0)
-            weights.append(float(w))
-            console.print(f"  [dim]branch (weight={w}):[/dim] {effect_name} {kwargs}")
-            result = plugins[effect_name]().process(audio, **kwargs)
-            outputs.append(result)
-        final = mix_buffers(outputs, weights)
-    else:
-        current = audio
-        for effect_name, kwargs in step_pairs:
-            if effect_name not in plugins:
-                console.print(f"[red]Unknown effect: {effect_name}[/red]")
-                raise typer.Exit(1)
-            console.print(f"  [dim]step:[/dim] {effect_name} {kwargs}")
-            current = plugins[effect_name]().process(current, **kwargs)
-        final = current
+    def _run_pipeline(audio: AudioBuffer) -> AudioBuffer:
+        if recipe_mode == "branch":
+            from rottengenizdat.chain import mix_buffers
+            outputs = []
+            weights = []
+            for effect_name, kwargs in step_pairs:
+                if effect_name not in plugins:
+                    console.print(f"[red]Unknown effect: {effect_name}[/red]")
+                    raise typer.Exit(1)
+                w = kwargs.pop("weight", 1.0)
+                weights.append(float(w))
+                console.print(f"  [dim]branch (weight={w}):[/dim] {effect_name} {kwargs}")
+                result = plugins[effect_name]().process(audio, **kwargs)
+                outputs.append(result)
+            return mix_buffers(outputs, weights)
+        else:
+            current = audio
+            for effect_name, kwargs in step_pairs:
+                if effect_name not in plugins:
+                    console.print(f"[red]Unknown effect: {effect_name}[/red]")
+                    raise typer.Exit(1)
+                console.print(f"  [dim]step:[/dim] {effect_name} {kwargs}")
+                current = plugins[effect_name]().process(current, **kwargs)
+            return current
 
-    save_audio(final, output)
-    console.print(f"[green]Saved:[/green] {output}")
+    if input_mode == InputMode.INDEPENDENT:
+        output.mkdir(parents=True, exist_ok=True)
+        for i, (audio, src_name) in enumerate(zip(combined, all_names)):
+            console.print(f"\n[bold]Processing input {i+1}/{len(combined)}:[/bold] {src_name}")
+            result = _run_pipeline(audio)
+            out_path = output / f"{i+1:03d}-{src_name}.wav"
+            save_audio(result, out_path)
+            console.print(f"[green]Saved:[/green] {out_path}")
+    else:
+        audio = combined[0]
+        console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")
+        result = _run_pipeline(audio)
+        save_audio(result, output)
+        console.print(f"[green]Saved:[/green] {output}")
 
 
 @recipe_app.command(name="save")

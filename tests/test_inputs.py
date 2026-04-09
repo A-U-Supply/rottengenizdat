@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import random
+from pathlib import Path
 
 import torch
 import pytest
+from typer.testing import CliRunner
 
-from rottengenizdat.core import AudioBuffer
+from rottengenizdat.cli import app
+from rottengenizdat.core import AudioBuffer, save_audio
 from rottengenizdat.inputs import combine_inputs, InputMode
+
+runner = CliRunner()
 
 
 @pytest.fixture
@@ -77,3 +82,66 @@ class TestCombineInputs:
     def test_empty_raises(self):
         with pytest.raises(ValueError, match="No input"):
             combine_inputs([], InputMode.PASSTHROUGH)
+
+
+class TestRecipeRunMultiInput:
+    def test_multiple_local_files(self, tmp_path: Path):
+        """recipe run accepts multiple input files."""
+        recipe = tmp_path / "test.toml"
+        recipe.write_text(
+            '[recipe]\nname = "test"\nmode = "sequential"\n'
+            '[[steps]]\neffect = "dry"\n'
+        )
+        sr = 44100
+        for name in ["a.wav", "b.wav"]:
+            buf = AudioBuffer(samples=torch.randn(1, sr), sample_rate=sr)
+            save_audio(buf, tmp_path / name)
+
+        result = runner.invoke(app, [
+            "recipe", "run", str(recipe),
+            str(tmp_path / "a.wav"), str(tmp_path / "b.wav"),
+            "--mode", "concat",
+            "-o", str(tmp_path / "out.wav"),
+        ])
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "out.wav").exists()
+
+    def test_independent_mode_creates_directory(self, tmp_path: Path):
+        recipe = tmp_path / "test.toml"
+        recipe.write_text(
+            '[recipe]\nname = "test"\nmode = "sequential"\n'
+            '[[steps]]\neffect = "dry"\n'
+        )
+        sr = 44100
+        for name in ["a.wav", "b.wav"]:
+            buf = AudioBuffer(samples=torch.randn(1, sr), sample_rate=sr)
+            save_audio(buf, tmp_path / name)
+
+        out_dir = tmp_path / "outputs"
+        result = runner.invoke(app, [
+            "recipe", "run", str(recipe),
+            str(tmp_path / "a.wav"), str(tmp_path / "b.wav"),
+            "--mode", "independent",
+            "-o", str(out_dir),
+        ])
+        assert result.exit_code == 0, result.stdout
+        assert out_dir.is_dir()
+        output_files = list(out_dir.glob("*.wav"))
+        assert len(output_files) == 2
+
+
+class TestPluginMultiInput:
+    def test_dry_multiple_local_files(self, tmp_path: Path):
+        sr = 44100
+        for name in ["a.wav", "b.wav"]:
+            buf = AudioBuffer(samples=torch.randn(1, sr), sample_rate=sr)
+            save_audio(buf, tmp_path / name)
+
+        result = runner.invoke(app, [
+            "dry",
+            str(tmp_path / "a.wav"), str(tmp_path / "b.wav"),
+            "--mode", "concat",
+            "-o", str(tmp_path / "out.wav"),
+        ])
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "out.wav").exists()
