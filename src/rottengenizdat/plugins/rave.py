@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from rottengenizdat.core import AudioBuffer, load_audio, save_audio
+from rottengenizdat.inputs import InputMode, combine_inputs
 from rottengenizdat.plugin import AudioEffect
 
 console = Console()
@@ -263,11 +264,11 @@ class RaveEffect(AudioEffect):
 
         @app.command(name=self.name, help=self.description)
         def rave_command(
-            input_file: Annotated[
-                Path, typer.Argument(help="Input audio file (wav, flac, mp3, etc.)")
-            ],
+            input_files: Annotated[
+                Optional[list[Path]], typer.Argument(help="Input audio file(s) (wav, flac, mp3, etc.)")
+            ] = None,
             output: Annotated[
-                Path, typer.Option("--output", "-o", help="Output file path (or directory when using --sweep)")
+                Path, typer.Option("--output", "-o", help="Output file path (or directory when using --sweep or --mode independent)")
             ] = Path("output.wav"),
             model: Annotated[
                 str,
@@ -349,41 +350,112 @@ class RaveEffect(AudioEffect):
                     "e.g. 'temperature=0.5,1.0,1.5,2.0'. Output path becomes a directory",
                 ),
             ] = None,
+            sample_sale: Annotated[
+                bool, typer.Option("--sample-sale", "-ss", help="Include random samples from #sample-sale")
+            ] = False,
+            sample_sale_count: Annotated[
+                int, typer.Option("--sample-sale-count", help="How many samples to pull (implies --sample-sale)")
+            ] = 0,
+            input_mode: Annotated[
+                Optional[str], typer.Option("--mode", help="Input combination mode: splice, concat, independent")
+            ] = None,
+            splice_min: Annotated[
+                float, typer.Option("--splice-min", help="Min splice segment seconds")
+            ] = 0.25,
+            splice_max: Annotated[
+                float, typer.Option("--splice-max", help="Max splice segment seconds")
+            ] = 4.0,
         ) -> None:
-            if not input_file.exists():
-                console.print(f"[red]File not found: {input_file}[/red]")
+            all_buffers: list[AudioBuffer] = []
+            all_names: list[str] = []
+
+            for f in (input_files or []):
+                if not f.exists():
+                    console.print(f"[red]File not found: {f}[/red]")
+                    raise typer.Exit(1)
+                console.print(f"[bold]Loading:[/bold] {f}")
+                buf = load_audio(f)
+                console.print(
+                    f"  {buf.duration:.1f}s, {buf.channels}ch, {buf.sample_rate}Hz"
+                )
+                all_buffers.append(buf)
+                all_names.append(f.stem)
+
+            ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
+            if ss_count > 0:
+                import rottengenizdat.sample_sale as _ss
+                console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
+                index = _ss.sync_index()
+                picks = _ss.pick_random_samples(index, ss_count)
+                for entry in picks:
+                    console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
+                    path = _ss.download_sample(entry)
+                    all_buffers.append(load_audio(path))
+                    all_names.append(entry.filename or entry.id)
+
+            if not all_buffers:
+                console.print("[red]No input files provided. Pass audio files or use --sample-sale.[/red]")
                 raise typer.Exit(1)
 
-            console.print(f"[bold]Loading:[/bold] {input_file}")
-            audio = load_audio(input_file)
-            console.print(
-                f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz"
-            )
+            resolved_mode = InputMode.resolve(input_mode, len(all_buffers))
+            if len(all_buffers) > 1:
+                console.print(f"[bold]Combining {len(all_buffers)} inputs[/bold] (mode={resolved_mode.value})")
+            combined = combine_inputs(all_buffers, resolved_mode, splice_min=splice_min, splice_max=splice_max)
 
-            if sweep:
-                self._run_sweep(
-                    audio, output, model, temperature, noise_amount, mix,
-                    dims, reverse, shuffle_chunks, quantize_step, sweep,
-                )
+            if resolved_mode == InputMode.INDEPENDENT:
+                output.mkdir(parents=True, exist_ok=True)
+                for i, (audio, src_name) in enumerate(zip(combined, all_names)):
+                    out_path = output / f"{i+1:03d}-{src_name}.wav"
+                    if sweep:
+                        self._run_sweep(
+                            audio, out_path, model, temperature, noise_amount, mix,
+                            dims, reverse, shuffle_chunks, quantize_step, sweep,
+                        )
+                    else:
+                        console.print(
+                            f"[bold]Processing:[/bold] rave model={model} temp={temperature} "
+                            f"noise={noise_amount} mix={mix} dims={dims} reverse={reverse} "
+                            f"shuffle={shuffle_chunks} quantize={quantize_step}"
+                        )
+                        result = self.process(
+                            audio,
+                            model_name=model,
+                            temperature=temperature,
+                            noise=noise_amount,
+                            mix=mix,
+                            dims=dims,
+                            reverse=reverse,
+                            shuffle_chunks=shuffle_chunks,
+                            quantize=quantize_step,
+                        )
+                        save_audio(result, out_path)
+                        console.print(f"[green]Saved:[/green] {out_path}")
             else:
-                console.print(
-                    f"[bold]Processing:[/bold] rave model={model} temp={temperature} "
-                    f"noise={noise_amount} mix={mix} dims={dims} reverse={reverse} "
-                    f"shuffle={shuffle_chunks} quantize={quantize_step}"
-                )
-                result = self.process(
-                    audio,
-                    model_name=model,
-                    temperature=temperature,
-                    noise=noise_amount,
-                    mix=mix,
-                    dims=dims,
-                    reverse=reverse,
-                    shuffle_chunks=shuffle_chunks,
-                    quantize=quantize_step,
-                )
-                save_audio(result, output)
-                console.print(f"[green]Saved:[/green] {output}")
+                audio = combined[0]
+                if sweep:
+                    self._run_sweep(
+                        audio, output, model, temperature, noise_amount, mix,
+                        dims, reverse, shuffle_chunks, quantize_step, sweep,
+                    )
+                else:
+                    console.print(
+                        f"[bold]Processing:[/bold] rave model={model} temp={temperature} "
+                        f"noise={noise_amount} mix={mix} dims={dims} reverse={reverse} "
+                        f"shuffle={shuffle_chunks} quantize={quantize_step}"
+                    )
+                    result = self.process(
+                        audio,
+                        model_name=model,
+                        temperature=temperature,
+                        noise=noise_amount,
+                        mix=mix,
+                        dims=dims,
+                        reverse=reverse,
+                        shuffle_chunks=shuffle_chunks,
+                        quantize=quantize_step,
+                    )
+                    save_audio(result, output)
+                    console.print(f"[green]Saved:[/green] {output}")
 
         return rave_command
 
