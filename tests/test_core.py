@@ -57,3 +57,38 @@ class TestAudioIO:
     def test_load_nonexistent_file(self):
         with pytest.raises(FileNotFoundError):
             load_audio(Path("/nonexistent/audio.wav"))
+
+
+from rottengenizdat.core import concat_buffers
+
+
+class TestConcatBuffers:
+    def test_concat_two_buffers(self):
+        a = AudioBuffer(samples=torch.ones(1, 100), sample_rate=44100)
+        b = AudioBuffer(samples=torch.ones(1, 200) * 2, sample_rate=44100)
+        result = concat_buffers([a, b])
+        assert result.num_samples == 300
+        assert torch.allclose(result.samples[:, :100], torch.ones(1, 100))
+        assert torch.allclose(result.samples[:, 100:], torch.ones(1, 200) * 2)
+
+    def test_preserves_sample_rate(self):
+        a = AudioBuffer(samples=torch.ones(1, 100), sample_rate=22050)
+        b = AudioBuffer(samples=torch.ones(1, 100), sample_rate=22050)
+        result = concat_buffers([a, b])
+        assert result.sample_rate == 22050
+
+    def test_resamples_mismatched_rates(self):
+        a = AudioBuffer(samples=torch.ones(1, 44100), sample_rate=44100)
+        b = AudioBuffer(samples=torch.ones(1, 22050), sample_rate=22050)
+        result = concat_buffers([a, b])
+        assert result.sample_rate == 44100
+        assert result.num_samples == 44100 + 44100
+
+    def test_single_buffer(self):
+        a = AudioBuffer(samples=torch.ones(1, 50), sample_rate=44100)
+        result = concat_buffers([a])
+        assert torch.equal(result.samples, a.samples)
+
+    def test_empty_raises(self):
+        with pytest.raises(ValueError):
+            concat_buffers([])
