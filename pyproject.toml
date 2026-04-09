@@ -12,6 +12,8 @@ dependencies = [
     "torchaudio>=2.0",
     "soundfile>=0.12",
     "requests>=2.31",
+    "slack_sdk>=3.0",
+    "tomli_w>=1.0",
 ]
 
 [project.optional-dependencies]
