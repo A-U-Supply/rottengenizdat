@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Optional
 
+import click
 import typer
 from rich.console import Console
 
@@ -18,10 +19,13 @@ from rottengenizdat.recipe import (
 )
 
 console = Console()
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
 app = typer.Typer(
     name="rotten",
     help="bone music for the machine age",
     invoke_without_command=True,
+    context_settings=CONTEXT_SETTINGS,
 )
 
 
@@ -102,7 +106,7 @@ def chain_command(
 # recipe sub-app
 # ---------------------------------------------------------------------------
 
-recipe_app = typer.Typer(name="recipe", help="Manage and run saved effect chains")
+recipe_app = typer.Typer(name="recipe", help="Manage and run saved effect chains", context_settings=CONTEXT_SETTINGS)
 app.add_typer(recipe_app)
 
 
