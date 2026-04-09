@@ -15,6 +15,12 @@ from rottengenizdat.config import (
     load_config,
     config_set as _config_set,
 )
+from rottengenizdat.sample_sale import (
+    CACHE_DIR,
+    load_index,
+    sync_index,
+    clear_cache,
+)
 from rottengenizdat.core import load_audio, save_audio
 from rottengenizdat.plugin import discover_plugins
 from rottengenizdat.recipe import (
@@ -370,3 +376,62 @@ def config_set_cmd(
     import rottengenizdat.cli as _self
     _config_set(key, value, config_dir=_self.CONFIG_DIR)
     console.print(f"[green]Set:[/green] {key}")
+
+
+# ---------------------------------------------------------------------------
+# sample-sale sub-app
+# ---------------------------------------------------------------------------
+
+sample_sale_app = typer.Typer(
+    name="sample-sale",
+    help="Manage the #sample-sale sample cache",
+    context_settings=CONTEXT_SETTINGS,
+)
+app.add_typer(sample_sale_app)
+
+
+@sample_sale_app.command(name="refresh")
+def sample_sale_refresh(
+    full: Annotated[bool, typer.Option("--full", help="Rebuild index from scratch")] = False,
+) -> None:
+    """Sync the sample index from Slack (incremental by default)."""
+    import rottengenizdat.sample_sale as _ss
+    mode = "full rebuild" if full else "incremental sync"
+    console.print(f"[bold]Refreshing index[/bold] ({mode})...")
+    entries = sync_index(full=full, cache_dir=_ss.CACHE_DIR)
+    console.print(f"[green]Index updated:[/green] {len(entries)} samples indexed")
+
+
+@sample_sale_app.command(name="list")
+def sample_sale_list(
+    cached: Annotated[bool, typer.Option("--cached", help="Only show downloaded samples")] = False,
+) -> None:
+    """List indexed samples from #sample-sale."""
+    import rottengenizdat.sample_sale as _ss
+    entries = load_index(cache_dir=_ss.CACHE_DIR)
+    if not entries:
+        console.print("[dim]No samples indexed. Run:[/dim] rotten sample-sale refresh")
+        return
+    if cached:
+        entries = [e for e in entries if e.is_cached]
+        if not entries:
+            console.print("[dim]No cached samples. Samples are downloaded on first use.[/dim]")
+            return
+    for entry in entries:
+        cached_mark = "[green]cached[/green]" if entry.is_cached else "[dim]not cached[/dim]"
+        name = entry.filename or entry.url or entry.id
+        console.print(f"  {entry.type:10s}  {cached_mark:20s}  {name}")
+    console.print(f"\n[dim]{len(entries)} sample(s)[/dim]")
+
+
+@sample_sale_app.command(name="clear")
+def sample_sale_clear(
+    all_: Annotated[bool, typer.Option("--all", help="Delete index too (not just media files)")] = False,
+) -> None:
+    """Delete cached sample files."""
+    import rottengenizdat.sample_sale as _ss
+    clear_cache(cache_dir=_ss.CACHE_DIR, full=all_)
+    if all_:
+        console.print("[green]Cache and index cleared.[/green]")
+    else:
+        console.print("[green]Cached media files cleared.[/green] Index kept.")

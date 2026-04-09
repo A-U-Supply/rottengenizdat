@@ -148,3 +148,34 @@ class TestPickRandom:
     def test_empty_index_raises(self):
         with pytest.raises(ValueError, match="No samples"):
             pick_random_samples([], count=1)
+
+
+from typer.testing import CliRunner
+from rottengenizdat.cli import app
+
+runner = CliRunner()
+
+
+class TestSampleSaleCLI:
+    def test_list_empty(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr("rottengenizdat.sample_sale.CACHE_DIR", tmp_path)
+        result = runner.invoke(app, ["sample-sale", "list"])
+        assert result.exit_code == 0
+        assert "No samples" in result.stdout or "no samples" in result.stdout.lower() or "Run" in result.stdout
+
+    def test_list_with_entries(self, tmp_path: Path, monkeypatch, sample_index):
+        monkeypatch.setattr("rottengenizdat.sample_sale.CACHE_DIR", tmp_path)
+        entries = [IndexEntry(**e) for e in sample_index]
+        save_index(entries, cache_dir=tmp_path)
+        result = runner.invoke(app, ["sample-sale", "list"])
+        assert result.exit_code == 0
+        assert "beat.wav" in result.stdout
+
+    def test_clear(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr("rottengenizdat.sample_sale.CACHE_DIR", tmp_path)
+        samples_dir = tmp_path / "samples"
+        samples_dir.mkdir()
+        (samples_dir / "fake.wav").write_bytes(b"fake")
+        result = runner.invoke(app, ["sample-sale", "clear"])
+        assert result.exit_code == 0
+        assert not samples_dir.exists()
