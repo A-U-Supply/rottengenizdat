@@ -62,6 +62,11 @@ def load_audio(path: Path, target_sr: int | None = None) -> AudioBuffer:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Audio file not found: {path}")
+    if path.is_dir():
+        raise IsADirectoryError(
+            f"'{path}' is a directory, not an audio file. "
+            f"Did you mean: rotten recipe run {path}/<name>.toml ...?"
+        )
     data, sr = sf.read(str(path), dtype="float32", always_2d=True)
     # soundfile returns (num_samples, channels); transpose to (channels, num_samples)
     samples = torch.from_numpy(data.T)

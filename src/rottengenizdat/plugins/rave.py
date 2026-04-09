@@ -378,8 +378,18 @@ class RaveEffect(AudioEffect):
                 if not f.exists():
                     console.print(f"[red]File not found: {f}[/red]")
                     raise typer.Exit(1)
+                if f.is_dir():
+                    console.print(
+                        f"[red]'{f}' is a directory, not an audio file.[/red]\n"
+                        f"  Did you mean: [bold]rotten recipe run {f}/<name>.toml ...[/bold]?"
+                    )
+                    raise typer.Exit(1)
                 console.print(f"[bold]Loading:[/bold] {f}")
-                buf = load_audio(f)
+                try:
+                    buf = load_audio(f)
+                except Exception as e:
+                    console.print(f"[red]Cannot read '{f}': {e}[/red]")
+                    raise typer.Exit(1)
                 console.print(
                     f"  {buf.duration:.1f}s, {buf.channels}ch, {buf.sample_rate}Hz"
                 )

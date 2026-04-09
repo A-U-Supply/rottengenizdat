@@ -262,6 +262,9 @@ def chain_command(ctx: typer.Context) -> None:
         if not f.exists():
             console.print(f"[red]File not found: {f}[/red]")
             raise typer.Exit(1)
+        if f.is_dir():
+            console.print(f"[red]'{f}' is a directory, not an audio file.[/red]")
+            raise typer.Exit(1)
         all_buffers.append(load_audio(f))
         all_names.append(f.stem)
 
@@ -457,6 +460,9 @@ def recipe_run(
     for f in (input_files or []):
         if not f.exists():
             console.print(f"[red]File not found: {f}[/red]")
+            raise typer.Exit(1)
+        if f.is_dir():
+            console.print(f"[red]'{f}' is a directory, not an audio file.[/red]")
             raise typer.Exit(1)
         all_buffers.append(load_audio(f))
         all_names.append(f.stem)
