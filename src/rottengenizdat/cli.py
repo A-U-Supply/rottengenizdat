@@ -62,7 +62,23 @@ Pull random samples from Slack #sample-sale:
 Run any command with -h to see detailed help and examples.
 """
 
-app = typer.Typer(
+_HANDLED_ERRORS = (FileNotFoundError, IsADirectoryError, ValueError, RuntimeError)
+
+
+class RottenApp(typer.Typer):
+    """Typer app that catches common errors and prints clean messages."""
+
+    def __call__(self, *args, **kwargs):
+        try:
+            super().__call__(*args, **kwargs)
+        except SystemExit:
+            raise
+        except _HANDLED_ERRORS as e:
+            console.print(f"[red]{e}[/red]")
+            raise SystemExit(1)
+
+
+app = RottenApp(
     name="rotten",
     help=_MAIN_HELP,
     invoke_without_command=True,
