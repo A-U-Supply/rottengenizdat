@@ -315,7 +315,7 @@ choir-of-ghosts                      congregation
 
 **speaking-in-tongues** — Drunk-choir with the inebriation cranked to blackout. Six voices, high temperature and noise, with shuffle and reverse. Discord and glossolalia, barely holding together. *(branch)*
 
-**choir-of-ghosts** — Pass through one voice model first, then stack four more on top. Voices built on voices — dense, smeared, layered deep. Like hearing a choir through the memory of another choir. *(sequential)*
+**choir-of-ghosts** — Three drunk-choir runs layered together. Voices built on voices — dense, smeared, layered deep. Like hearing a choir through the memory of another choir. *(branch, nested)*
 
 **time-sick** — Temporal nausea: reverse the latent, shuffle it into chunks, quantize. Structure is there but the timeline is having a seizure. *(sequential)*
 
@@ -361,11 +361,52 @@ dims = "0,1,2,3,4,5"
 weight = 0.3
 ```
 
+### Nesting recipes
+
+Recipes can reference other recipes as steps using `effect = "recipe"`. This lets you layer multiple recipe runs together or chain them in sequence.
+
+```toml
+[recipe]
+name = "triple-choir"
+mode = "branch"
+
+# three drunk-choir runs layered together with equal weight
+[[steps]]
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+
+[[steps]]
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+
+[[steps]]
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+```
+
+```toml
+[recipe]
+name = "choir-then-xray"
+mode = "sequential"
+
+# run drunk-choir, then feed the result through bone-xray
+[[steps]]
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+
+[[steps]]
+effect = "recipe"
+path = "recipes/bone-xray.toml"
+```
+
+You can mix `recipe`, `rave`, and `dry` steps freely. Nesting depth is capped at 8 to prevent circular references.
+
 **Recipe fields for each step:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `effect` | string | `"rave"` or `"dry"` |
+| `effect` | string | `"rave"`, `"dry"`, or `"recipe"` |
+| `path` | string | Path to recipe TOML file (recipe only) |
 | `model` | string | RAVE model name (rave only) |
 | `temperature` | float | Latent scaling |
 | `noise` | float | Gaussian noise amount |
