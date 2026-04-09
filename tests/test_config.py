@@ -86,3 +86,34 @@ class TestResolveSlackChannel:
     def test_raises_when_no_channel(self, tmp_path: Path):
         with pytest.raises(ValueError, match="Slack channel not configured"):
             resolve_slack_channel(config_dir=tmp_path)
+
+
+from typer.testing import CliRunner
+from rottengenizdat.cli import app
+
+runner = CliRunner()
+
+
+class TestConfigCLI:
+    def test_config_path(self):
+        result = runner.invoke(app, ["config", "path"])
+        assert result.exit_code == 0
+        assert "config.toml" in result.stdout
+
+    def test_config_set_and_show(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr("rottengenizdat.config.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("rottengenizdat.cli.CONFIG_DIR", tmp_path)
+        result = runner.invoke(app, ["config", "set", "slack.token", "xoxb-cli-test"])
+        assert result.exit_code == 0
+        result = runner.invoke(app, ["config", "show"])
+        assert result.exit_code == 0
+        # Token should be masked in output
+        assert "xoxb-cli-test" not in result.stdout
+        assert "xoxb" in result.stdout
+        assert "****" in result.stdout
+
+    def test_config_show_empty(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr("rottengenizdat.config.CONFIG_DIR", tmp_path)
+        monkeypatch.setattr("rottengenizdat.cli.CONFIG_DIR", tmp_path)
+        result = runner.invoke(app, ["config", "show"])
+        assert result.exit_code == 0

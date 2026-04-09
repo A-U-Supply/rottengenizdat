@@ -10,6 +10,11 @@ from rich.console import Console
 from rottengenizdat import __version__
 from rottengenizdat.banner import BANNER
 from rottengenizdat.chain import run_branch, run_chain
+from rottengenizdat.config import (
+    CONFIG_DIR,
+    load_config,
+    config_set as _config_set,
+)
 from rottengenizdat.core import load_audio, save_audio
 from rottengenizdat.plugin import discover_plugins
 from rottengenizdat.recipe import (
@@ -318,3 +323,50 @@ def recipe_save(
     mode = "branch" if branch else "sequential"
     save_recipe(recipe_file, name, mode, steps)
     console.print(f"[green]Recipe saved:[/green] {recipe_file} (name={name}, mode={mode})")
+
+
+# ---------------------------------------------------------------------------
+# config sub-app
+# ---------------------------------------------------------------------------
+
+config_app = typer.Typer(name="config", help="Manage rottengenizdat configuration", context_settings=CONTEXT_SETTINGS)
+app.add_typer(config_app)
+
+
+@config_app.command(name="path")
+def config_path() -> None:
+    """Print the config file location."""
+    import rottengenizdat.cli as _self
+    console.print(str(_self.CONFIG_DIR / "config.toml"))
+
+
+@config_app.command(name="show")
+def config_show() -> None:
+    """Print current configuration (tokens masked)."""
+    import rottengenizdat.cli as _self
+    config = load_config(config_dir=_self.CONFIG_DIR)
+    if not config:
+        console.print("[dim]No configuration file found.[/dim]")
+        console.print(f"[dim]Create one with:[/dim] rotten config set slack.token xoxb-YOUR-TOKEN")
+        return
+    for section, values in config.items():
+        console.print(f"[bold]\\[{section}][/bold]")
+        if isinstance(values, dict):
+            for key, val in values.items():
+                display_val = val
+                if "token" in key.lower() and isinstance(val, str) and len(val) > 8:
+                    display_val = val[:4] + "****" + val[-4:]
+                console.print(f"  {key} = {display_val}")
+        else:
+            console.print(f"  {section} = {values}")
+
+
+@config_app.command(name="set")
+def config_set_cmd(
+    key: Annotated[str, typer.Argument(help="Dotted config key (e.g. slack.token)")],
+    value: Annotated[str, typer.Argument(help="Value to set")],
+) -> None:
+    """Set a configuration value."""
+    import rottengenizdat.cli as _self
+    _config_set(key, value, config_dir=_self.CONFIG_DIR)
+    console.print(f"[green]Set:[/green] {key}")
