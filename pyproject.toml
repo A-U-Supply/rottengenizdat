@@ -1,0 +1,26 @@
+[project]
+name = "rottengenizdat"
+version = "0.1.0"
+description = "bone music for the machine age — audio transformation through ML models"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.15",
+    "rich>=13.0",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "soundfile>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+rotten = "rottengenizdat.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
