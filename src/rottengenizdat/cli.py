@@ -119,25 +119,56 @@ register_plugins()
 _CHAIN_HELP = """\
 Chain multiple effects sequentially or in parallel branches.
 
-Sequential mode (default) feeds audio through each step in order — the
-output of step 1 becomes the input of step 2. Use this to stack
-transformations, building up layers of mangling:
+SEQUENTIAL MODE (default) feeds audio through each step in order — the
+output of step 1 becomes the input of step 2. Stack transformations:
 
+  # Percussion reinterpretation, then vintage warmth on top
   rotten chain input.wav "rave -m percussion -t 1.2" "rave -m vintage" -o out.wav
 
-Branch mode (-b) sends the ORIGINAL audio to every step independently,
-then mixes all the outputs together. Use this to blend multiple
-reinterpretations of the same source:
+  # Three passes with rising temperature — photocopy of a photocopy
+  rotten chain input.wav "rave -m vintage -t 0.8" "rave -m vintage -t 1.0" "rave -m vintage -t 1.3" -o mirrors.wav
 
-  rotten chain input.wav "dry" "rave -m vintage -t 1.3" --branch -o out.wav
+BRANCH MODE (-b) sends the ORIGINAL audio to every step independently,
+then mixes all outputs. Blend multiple reinterpretations:
 
-Each step is a quoted string using the same flags as the rave command:
+  # 50/50 blend of original and RAVE vintage
+  rotten chain input.wav "dry" "rave -m vintage -t 1.3" --branch -o half.wav
+
+  # Three models fighting over the same source
+  rotten chain input.wav "rave -m percussion" "rave -m nasa" "rave -m VCTK" -b -o chaos.wav
+
+MULTI-INPUT — feed multiple files, combined before chaining:
+
+  # Splice two files into a random collage, then chain through effects
+  rotten chain a.wav b.wav "rave -m percussion" -o spliced.wav
+
+  # Concatenate three files, then process the long result
+  rotten chain a.wav b.wav c.wav -- "rave -m vintage" --mode concat -o long.wav
+
+  # Process each input independently, outputs to a directory
+  rotten chain a.wav b.wav -- "rave -m nasa -t 1.5" --mode independent -o out/
+
+  Input combination modes (--mode):
+    splice ......... Default for multiple inputs. Chop all files into
+                     random segments (0.25s–4.0s), shuffle, reassemble.
+    concat ......... Join files end-to-end in order.
+    independent .... Process each file separately, output to directory.
+
+  Tune splice: --splice-min 0.1 --splice-max 2.0 (seconds)
+
+#SAMPLE-SALE — pull random audio from your Slack channel:
+
+  # Grab 3 random samples, splice them, chain through effects
+  rotten chain --sample-sale-count 3 "rave -m percussion" -o collage.wav
+
+  # Mix a local file with one random sample
+  rotten chain input.wav --sample-sale "rave -m vintage" --mode concat -o mixed.wav
+
+STEP SYNTAX — each step is a quoted string with rave flags:
   -m MODEL, -t TEMP, -n NOISE, -w MIX, -d DIMS, -r, --shuffle N, -q STEP
+  Use 'dry' as a step in branch mode to mix in the unprocessed original.
 
-Use 'dry' as a step in branch mode to mix in the unprocessed original.
-
-For reusable chains, save them as recipes:
-
+Save reusable chains as recipes:
   rotten recipe save my-chain.toml "rave -m percussion" "rave -m vintage" --name "my chain"
 """
 
@@ -336,11 +367,39 @@ Recipes (subtle → chaotic):
                         reverse, shuffle, noise, high temp. What comes
                         out is barely audio.
 
-Run a recipe:
-  rotten recipe run recipes/bone-xray.toml input.wav -o out.wav
+RUNNING RECIPES:
 
-Save your own:
+  # Single input — standard usage
+  rotten recipe run recipes/bone-xray.toml input.wav -o out.wav
+  rotten recipe run recipes/fever-dream.toml drums.wav -o destroyed.wav
+
+  # Multiple inputs — splice them into a collage, then run recipe
+  rotten recipe run recipes/drunk-choir.toml a.wav b.wav c.wav -o choir.wav
+
+  # Multiple inputs — concatenate in order
+  rotten recipe run recipes/barely-there.toml a.wav b.wav --mode concat -o gentle.wav
+
+  # Multiple inputs — process each independently, output to directory
+  rotten recipe run recipes/bone-xray.toml a.wav b.wav --mode independent -o out/
+
+  # Random samples from Slack #sample-sale
+  rotten recipe run recipes/fever-dream.toml --sample-sale-count 3 -o collage.wav
+
+  # Mix local file with a random sample
+  rotten recipe run recipes/bone-xray.toml input.wav --sample-sale -o mixed.wav
+
+  Input combination modes (--mode):
+    splice ......... Default for multiple inputs. Chop all files into
+                     random segments (0.25s–4.0s), shuffle, reassemble.
+    concat ......... Join files end-to-end in order.
+    independent .... Process each file separately, output to directory.
+
+  Tune splice: --splice-min 0.1 --splice-max 2.0 (seconds)
+
+SAVING YOUR OWN:
+
   rotten recipe save my.toml "rave -m percussion" "rave -m vintage" --name "my recipe"
+  rotten recipe save blend.toml "dry" "rave -m vintage -t 1.3" -b --name "haunted blend"
 """
 
 recipe_app = typer.Typer(name="recipe", help=_RECIPE_HELP, context_settings=CONTEXT_SETTINGS)
@@ -362,13 +421,30 @@ def recipe_run(
 
     Supports multiple local files as positional args and/or random samples
     from #sample-sale. When multiple inputs are provided, they are combined
-    according to --mode (default: splice).
+    according to --mode (default: splice — chop and shuffle all inputs).
 
     Examples:
 
-      rotten recipe run recipes/fever-dream.toml input.wav -o out.wav
-      rotten recipe run recipes/bone-xray.toml a.wav b.wav --mode concat -o out.wav
-      rotten recipe run recipes/barely-there.toml --sample-sale-count 3 -o out.wav
+      # Single file through a recipe
+      rotten recipe run recipes/bone-xray.toml input.wav -o xray.wav
+
+      # Two files spliced into a collage, then processed (default mode)
+      rotten recipe run recipes/fever-dream.toml a.wav b.wav -o collage.wav
+
+      # Three files concatenated end-to-end, then processed
+      rotten recipe run recipes/barely-there.toml a.wav b.wav c.wav --mode concat -o long.wav
+
+      # Each file processed independently, one output per input
+      rotten recipe run recipes/drunk-choir.toml a.wav b.wav --mode independent -o out/
+
+      # Pull 3 random samples from #sample-sale, splice and process
+      rotten recipe run recipes/bone-xray.toml --sample-sale-count 3 -o random.wav
+
+      # Mix a local file with a random Slack sample
+      rotten recipe run recipes/hall-of-mirrors.toml vocals.wav --sample-sale -o mixed.wav
+
+      # Tune the splice segment sizes
+      rotten recipe run recipes/fever-dream.toml a.wav b.wav --splice-min 0.1 --splice-max 1.0 -o choppy.wav
     """
     if not recipe_file.exists():
         console.print(f"[red]Recipe file not found: {recipe_file}[/red]")
@@ -492,20 +568,63 @@ def recipe_save(
 # config sub-app
 # ---------------------------------------------------------------------------
 
-config_app = typer.Typer(name="config", help="Manage rottengenizdat configuration", context_settings=CONTEXT_SETTINGS)
+_CONFIG_HELP = """\
+Manage rottengenizdat configuration.
+
+Settings are stored in ~/.config/rottengenizdat/config.toml. Currently
+used for Slack integration (#sample-sale), but can hold any config.
+
+SETUP (one-time):
+
+  # Set your Slack bot token (get one at api.slack.com/apps)
+  rotten config set slack.token xoxb-YOUR-BOT-TOKEN
+
+  # Set the #sample-sale channel ID (right-click channel → Copy link → ID is last segment)
+  rotten config set slack.channel C0XXXXXXX
+
+  # Verify your config
+  rotten config show
+
+  # See where the config file lives
+  rotten config path
+
+Token resolution order: config file > SLACK_BOT_TOKEN env var > error.
+Tokens are masked in 'config show' output for safety.
+"""
+
+config_app = typer.Typer(name="config", help=_CONFIG_HELP, context_settings=CONTEXT_SETTINGS)
 app.add_typer(config_app)
 
 
 @config_app.command(name="path")
 def config_path() -> None:
-    """Print the config file location."""
+    """Print the config file location.
+
+    Prints the full path to the config TOML file, whether or not it exists.
+    Useful for finding the file to edit manually or for scripting.
+
+    Example:
+      rotten config path
+      # → /Users/you/.config/rottengenizdat/config.toml
+    """
     import rottengenizdat.cli as _self
     console.print(str(_self.CONFIG_DIR / "config.toml"))
 
 
 @config_app.command(name="show")
 def config_show() -> None:
-    """Print current configuration (tokens masked)."""
+    """Print current configuration (tokens masked).
+
+    Shows all settings from the config file. Token values are partially
+    masked (first 4 and last 4 characters shown) so you can verify the
+    right token is configured without exposing the full value.
+
+    Examples:
+      rotten config show
+      # → [slack]
+      #     token = xoxb****abcd
+      #     channel = C0XXXXXXX
+    """
     import rottengenizdat.cli as _self
     config = load_config(config_dir=_self.CONFIG_DIR)
     if not config:
@@ -529,7 +648,15 @@ def config_set_cmd(
     key: Annotated[str, typer.Argument(help="Dotted config key (e.g. slack.token)")],
     value: Annotated[str, typer.Argument(help="Value to set")],
 ) -> None:
-    """Set a configuration value."""
+    """Set a configuration value.
+
+    Keys use dotted notation to address nested TOML sections.
+    Creates the config file and parent directories if they don't exist.
+
+    Examples:
+      rotten config set slack.token xoxb-YOUR-BOT-TOKEN
+      rotten config set slack.channel C0XXXXXXX
+    """
     import rottengenizdat.cli as _self
     _config_set(key, value, config_dir=_self.CONFIG_DIR)
     console.print(f"[green]Set:[/green] {key}")
@@ -539,9 +666,75 @@ def config_set_cmd(
 # sample-sale sub-app
 # ---------------------------------------------------------------------------
 
+_SAMPLE_SALE_HELP = """\
+Manage the #sample-sale sample cache.
+
+rottengenizdat can pull random audio and video from your Slack
+#sample-sale channel and feed them into any pipeline. This subcommand
+manages the local index and media cache.
+
+HOW IT WORKS:
+
+  1. An index of all media in #sample-sale is synced from Slack
+     (file attachments filtered by audio/video MIME type, plus URLs
+     in message text for yt-dlp download).
+
+  2. When you use --sample-sale or --sample-sale-count on a pipeline
+     command, random entries are picked from the index.
+
+  3. Media files are downloaded lazily — only when a sample is
+     actually selected for use, not during indexing.
+
+  4. Downloaded files are cached at ~/.cache/rottengenizdat/samples/
+     so the same sample doesn't need re-downloading.
+
+  5. The index syncs incrementally on every --sample-sale use
+     (fetches only new messages since last sync).
+
+COMMANDS:
+
+  # Sync the index from Slack (incremental — only new messages)
+  rotten sample-sale refresh
+
+  # Full rebuild of the index from scratch
+  rotten sample-sale refresh --full
+
+  # Show all indexed samples and their cache status
+  rotten sample-sale list
+
+  # Show only samples that are already downloaded locally
+  rotten sample-sale list --cached
+
+  # Delete downloaded media files (keeps the index)
+  rotten sample-sale clear
+
+  # Delete everything — media files and the index
+  rotten sample-sale clear --all
+
+USING SAMPLES IN PIPELINES:
+
+  # One random sample through a recipe
+  rotten recipe run recipes/bone-xray.toml --sample-sale -o out.wav
+
+  # Three random samples spliced and processed
+  rotten recipe run recipes/fever-dream.toml --sample-sale-count 3 -o collage.wav
+
+  # Mix a local file with random samples
+  rotten rave input.wav --sample-sale-count 2 -m vintage --mode splice -o mixed.wav
+
+  # Random samples through a chain
+  rotten chain --sample-sale-count 2 "rave -m percussion" "rave -m nasa" -o chain.wav
+
+REQUIREMENTS:
+
+  - Slack bot token configured: rotten config set slack.token xoxb-...
+  - Slack channel ID configured: rotten config set slack.channel C0XXXXXXX
+  - yt-dlp installed (optional, for downloading linked media): brew install yt-dlp
+"""
+
 sample_sale_app = typer.Typer(
     name="sample-sale",
-    help="Manage the #sample-sale sample cache",
+    help=_SAMPLE_SALE_HELP,
     context_settings=CONTEXT_SETTINGS,
 )
 app.add_typer(sample_sale_app)
@@ -551,7 +744,16 @@ app.add_typer(sample_sale_app)
 def sample_sale_refresh(
     full: Annotated[bool, typer.Option("--full", help="Rebuild index from scratch")] = False,
 ) -> None:
-    """Sync the sample index from Slack (incremental by default)."""
+    """Sync the sample index from Slack (incremental by default).
+
+    Fetches message history from #sample-sale and indexes any audio/video
+    attachments and URLs. By default only fetches messages newer than the
+    last sync. Use --full to rebuild the entire index from scratch.
+
+    Examples:
+      rotten sample-sale refresh           # quick incremental sync
+      rotten sample-sale refresh --full    # full rebuild from channel history
+    """
     import rottengenizdat.sample_sale as _ss
     mode = "full rebuild" if full else "incremental sync"
     console.print(f"[bold]Refreshing index[/bold] ({mode})...")
@@ -563,7 +765,16 @@ def sample_sale_refresh(
 def sample_sale_list(
     cached: Annotated[bool, typer.Option("--cached", help="Only show downloaded samples")] = False,
 ) -> None:
-    """List indexed samples from #sample-sale."""
+    """List indexed samples from #sample-sale.
+
+    Shows all media items found in the channel — file attachments and
+    URLs. Each entry shows its type (attachment/link), whether the
+    media file has been downloaded locally, and the filename or URL.
+
+    Examples:
+      rotten sample-sale list              # all indexed samples
+      rotten sample-sale list --cached     # only downloaded ones
+    """
     import rottengenizdat.sample_sale as _ss
     entries = load_index(cache_dir=_ss.CACHE_DIR)
     if not entries:
@@ -585,7 +796,18 @@ def sample_sale_list(
 def sample_sale_clear(
     all_: Annotated[bool, typer.Option("--all", help="Delete index too (not just media files)")] = False,
 ) -> None:
-    """Delete cached sample files."""
+    """Delete cached sample files.
+
+    By default, removes downloaded media files but keeps the index
+    (so the next --sample-sale use can pick from the full index
+    without re-syncing, and only re-downloads what it needs).
+
+    Use --all to also delete the index, forcing a full re-sync.
+
+    Examples:
+      rotten sample-sale clear             # delete media, keep index
+      rotten sample-sale clear --all       # delete everything
+    """
     import rottengenizdat.sample_sale as _ss
     clear_cache(cache_dir=_ss.CACHE_DIR, full=all_)
     if all_:
