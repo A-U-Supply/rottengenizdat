@@ -76,6 +76,74 @@ class TestRaveEffect:
         half = effect.process(sine_wave, model_name="percussion", mix=0.5)
         assert isinstance(half, AudioBuffer)
 
+    @patch("rottengenizdat.plugins.rave.load_rave_model")
+    def test_dims_preserves_unselected(self, mock_load, mock_model, sine_wave: AudioBuffer):
+        """Only selected dims should be modified; unselected dims must retain original values."""
+        mock_load.return_value = mock_model
+        fixed_z = torch.ones(1, 16, 21)
+        mock_model.encode = MagicMock(return_value=fixed_z.clone())
+
+        decoded_z = []
+
+        def capture(z):
+            decoded_z.append(z.clone())
+            return torch.randn(1, 1, z.shape[-1] * 2048)
+
+        mock_model.decode = MagicMock(side_effect=capture)
+
+        effect = RaveEffect()
+        effect.process(sine_wave, model_name="percussion", temperature=2.0, dims="0,1")
+
+        z_out = decoded_z[0]
+        # dims 0,1 should be scaled by temperature (ones * 2.0)
+        assert torch.allclose(z_out[:, 0:2, :], fixed_z[:, 0:2, :] * 2.0)
+        # dims 2-15 should be unchanged (still ones)
+        assert torch.allclose(z_out[:, 2:, :], fixed_z[:, 2:, :])
+
+    @patch("rottengenizdat.plugins.rave.load_rave_model")
+    def test_reverse_flips_time(self, mock_load, mock_model, sine_wave: AudioBuffer):
+        """Latent time axis should be reversed when reverse=True."""
+        mock_load.return_value = mock_model
+        fixed_z = torch.arange(21).float().unsqueeze(0).unsqueeze(0).expand(1, 16, -1)
+        mock_model.encode = MagicMock(return_value=fixed_z.clone())
+
+        decoded_z = []
+
+        def capture(z):
+            decoded_z.append(z.clone())
+            return torch.randn(1, 1, z.shape[-1] * 2048)
+
+        mock_model.decode = MagicMock(side_effect=capture)
+
+        effect = RaveEffect()
+        effect.process(sine_wave, model_name="percussion", reverse=True)
+
+        z_out = decoded_z[0]
+        expected = fixed_z.flip(dims=[-1])
+        assert torch.allclose(z_out, expected)
+
+    @patch("rottengenizdat.plugins.rave.load_rave_model")
+    def test_quantize_snaps_values(self, mock_load, mock_model, sine_wave: AudioBuffer):
+        """Latent values should snap to the nearest step-size grid point."""
+        mock_load.return_value = mock_model
+        fixed_z = torch.tensor([[[0.3, 0.7, 1.2, 1.8]]]).expand(1, 16, -1)
+        mock_model.encode = MagicMock(return_value=fixed_z.clone())
+
+        decoded_z = []
+
+        def capture(z):
+            decoded_z.append(z.clone())
+            return torch.randn(1, 1, z.shape[-1] * 2048)
+
+        mock_model.decode = MagicMock(side_effect=capture)
+
+        effect = RaveEffect()
+        effect.process(sine_wave, model_name="percussion", quantize=0.5)
+
+        z_out = decoded_z[0]
+        expected = torch.tensor([[[0.5, 0.5, 1.0, 2.0]]]).expand(1, 16, -1)
+        assert torch.allclose(z_out, expected)
+
 
 class TestAvailableModels:
     def test_known_models_listed(self):

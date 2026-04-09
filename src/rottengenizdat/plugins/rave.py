@@ -85,6 +85,10 @@ class RaveEffect(AudioEffect):
         temperature: float = 1.0,
         noise: float = 0.0,
         mix: float = 1.0,
+        dims: Optional[str] = None,
+        reverse: bool = False,
+        shuffle_chunks: int = 0,
+        quantize: float = 0.0,
         **kwargs,
     ) -> AudioBuffer:
         """Process audio through RAVE.
@@ -95,6 +99,11 @@ class RaveEffect(AudioEffect):
             temperature: Scale latent vectors (>1 = more extreme, <1 = subtle).
             noise: Amount of random noise to add to latent space (0-1).
             mix: Wet/dry blend (0.0 = fully dry/original, 1.0 = fully wet/RAVE).
+            dims: Comma-separated latent dim indices to manipulate (e.g. "0,3,7").
+                  Unselected dims retain the original encoded values. None = all dims.
+            reverse: Reverse the temporal axis of the latent representation.
+            shuffle_chunks: Shuffle latent in temporal chunks of this many frames (0 = off).
+            quantize: Snap latent values to a grid of this step size (0.0 = off).
         """
         model = load_rave_model(model_name)
 
@@ -103,11 +112,38 @@ class RaveEffect(AudioEffect):
             x = mono.as_model_input()  # (1, 1, samples)
             z = model.encode(x)
 
+            # Save original for dim restoration after manipulations
+            z_original = z.clone() if dims is not None else None
+
+            # Build dim mask (True = dims to leave untouched)
+            if dims is not None:
+                dim_indices = [int(d) for d in dims.split(",")]
+                mask = torch.ones(z.shape[1], dtype=torch.bool)
+                mask[dim_indices] = False
+
             if temperature != 1.0:
                 z = z * temperature
 
             if noise > 0.0:
                 z = z + torch.randn_like(z) * noise
+
+            if quantize > 0.0:
+                z = torch.round(z / quantize) * quantize
+
+            if reverse:
+                z = z.flip(dims=[-1])
+
+            if shuffle_chunks > 0:
+                n_frames = z.shape[-1]
+                n_chunks = n_frames // shuffle_chunks
+                if n_chunks > 1:
+                    chunks = list(z.split(shuffle_chunks, dim=-1))
+                    indices = torch.randperm(len(chunks))
+                    z = torch.cat([chunks[i] for i in indices], dim=-1)
+
+            # Restore unselected dims from original encoding
+            if dims is not None:
+                z[:, mask, :] = z_original[:, mask, :]
 
             x_hat = model.decode(z)
 
@@ -168,6 +204,26 @@ class RaveEffect(AudioEffect):
                     help="Wet/dry blend (0.0=original, 0.5=half, 1.0=full RAVE)",
                 ),
             ] = 1.0,
+            dims: Annotated[
+                Optional[str],
+                typer.Option(
+                    "--dims",
+                    "-d",
+                    help="Latent dims to manipulate (e.g. 0,3,7). Others stay original.",
+                ),
+            ] = None,
+            reverse: Annotated[
+                bool,
+                typer.Option("--reverse", "-r", help="Reverse latent time axis"),
+            ] = False,
+            shuffle_chunks: Annotated[
+                int,
+                typer.Option("--shuffle", help="Shuffle latent in chunks of N frames"),
+            ] = 0,
+            quantize_step: Annotated[
+                float,
+                typer.Option("--quantize", "-q", help="Quantize latent to step size"),
+            ] = 0.0,
             sweep: Annotated[
                 Optional[str],
                 typer.Option(
@@ -187,10 +243,15 @@ class RaveEffect(AudioEffect):
             )
 
             if sweep:
-                self._run_sweep(audio, output, model, temperature, noise_amount, mix, sweep)
+                self._run_sweep(
+                    audio, output, model, temperature, noise_amount, mix,
+                    dims, reverse, shuffle_chunks, quantize_step, sweep,
+                )
             else:
                 console.print(
-                    f"[bold]Processing:[/bold] rave model={model} temp={temperature} noise={noise_amount} mix={mix}"
+                    f"[bold]Processing:[/bold] rave model={model} temp={temperature} "
+                    f"noise={noise_amount} mix={mix} dims={dims} reverse={reverse} "
+                    f"shuffle={shuffle_chunks} quantize={quantize_step}"
                 )
                 result = self.process(
                     audio,
@@ -198,6 +259,10 @@ class RaveEffect(AudioEffect):
                     temperature=temperature,
                     noise=noise_amount,
                     mix=mix,
+                    dims=dims,
+                    reverse=reverse,
+                    shuffle_chunks=shuffle_chunks,
+                    quantize=quantize_step,
                 )
                 save_audio(result, output)
                 console.print(f"[green]Saved:[/green] {output}")
@@ -212,6 +277,10 @@ class RaveEffect(AudioEffect):
         temperature: float,
         noise_amount: float,
         mix: float,
+        dims: Optional[str],
+        reverse: bool,
+        shuffle_chunks: int,
+        quantize_step: float,
         sweep: str,
     ) -> None:
         """Run a parameter sweep and save grid of outputs."""
@@ -227,6 +296,10 @@ class RaveEffect(AudioEffect):
                 "temperature": temperature,
                 "noise": noise_amount,
                 "mix": mix,
+                "dims": dims,
+                "reverse": reverse,
+                "shuffle_chunks": shuffle_chunks,
+                "quantize": quantize_step,
             }
             kwargs[param_name] = val
 
