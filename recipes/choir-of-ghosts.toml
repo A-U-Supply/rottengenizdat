@@ -1,39 +1,22 @@
 [recipe]
 name = "choir-of-ghosts"
-mode = "sequential"
+mode = "branch"
 
-# pass through one voice model first, then branch the result through four more
-# voices built on voices — dense, smeared, layered deep
+# three drunk-choir runs layered together, each filtered through different dims
 # like hearing a choir through the memory of another choir
+# voices built on voices — dense, smeared, layered deep
 
 [[steps]]
-effect = "rave"
-model = "VCTK"
-temperature = 1.0
-noise = 0.1
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+weight = 0.4
 
 [[steps]]
-effect = "rave"
-model = "VCTK"
-temperature = 1.3
-noise = 0.2
-dims = "0,1,2,3,4,5,6,7"
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+weight = 0.35
 
 [[steps]]
-effect = "rave"
-model = "isis"
-temperature = 0.9
-noise = 0.15
-
-[[steps]]
-effect = "rave"
-model = "sol_ordinario"
-temperature = 1.1
-dims = "4,5,6,7,8,9,10,11"
-
-[[steps]]
-effect = "rave"
-model = "VCTK"
-temperature = 1.5
-noise = 0.3
-dims = "8,9,10,11,12,13,14,15"
+effect = "recipe"
+path = "recipes/drunk-choir.toml"
+weight = 0.25
