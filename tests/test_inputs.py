@@ -145,3 +145,22 @@ class TestPluginMultiInput:
         ])
         assert result.exit_code == 0, result.stdout
         assert (tmp_path / "out.wav").exists()
+
+
+class TestChainMultiInput:
+    def test_multiple_local_files_concat(self, tmp_path: Path):
+        sr = 44100
+        for name in ["a.wav", "b.wav"]:
+            buf = AudioBuffer(samples=torch.randn(1, sr), sample_rate=sr)
+            save_audio(buf, tmp_path / name)
+
+        result = runner.invoke(app, [
+            "chain",
+            str(tmp_path / "a.wav"), str(tmp_path / "b.wav"),
+            "--",
+            "dry",
+            "--mode", "concat",
+            "-o", str(tmp_path / "out.wav"),
+        ])
+        assert result.exit_code == 0, result.stdout
+        assert (tmp_path / "out.wav").exists()

@@ -136,36 +136,138 @@ For reusable chains, save them as recipes:
 """
 
 
-@app.command(name="chain", help=_CHAIN_HELP)
-def chain_command(
-    input_file: Annotated[Path, typer.Argument(help="Input audio file")],
-    steps: Annotated[list[str], typer.Argument(help="Effect steps as quoted strings, e.g. 'rave -m percussion -t 1.2'")],
-    output: Annotated[Path, typer.Option("--output", "-o", help="Output file path")] = Path("output.wav"),
-    branch: Annotated[bool, typer.Option("--branch", "-b", help="Run steps in parallel and mix (default: sequential)")] = False,
-) -> None:
-    if not input_file.exists():
-        console.print(f"[red]File not found: {input_file}[/red]")
-        raise typer.Exit(1)
+@app.command(
+    name="chain",
+    help=_CHAIN_HELP,
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def chain_command(ctx: typer.Context) -> None:
+    """Chain multiple effects sequentially or in parallel branches.
+
+    Accepts multiple input files followed (optionally separated by '--') by
+    one or more step strings.  Named options like --mode, -o, --branch can
+    appear anywhere in the argument list.
+
+    Examples::
+
+      rotten chain input.wav "rave -m percussion" -o out.wav
+      rotten chain a.wav b.wav -- "rave -m vintage" --mode concat -o out.wav
+    """
+    # click/typer cannot split two variadic positional groups, so we parse the
+    # raw ctx.args ourselves.  '--' is consumed by click and not present in
+    # ctx.args; all other tokens land here unprocessed.
+
+    raw: list[str] = list(ctx.args)
+
+    # 1. Extract named chain options from the token stream.
+    output: Path = Path("output.wav")
+    branch: bool = False
+    sample_sale: bool = False
+    sample_sale_count: int = 0
+    mode: Optional[str] = None
+    splice_min: float = 0.25
+    splice_max: float = 4.0
+
+    positional: list[str] = []
+    idx = 0
+    while idx < len(raw):
+        tok = raw[idx]
+        if tok in ("-o", "--output") and idx + 1 < len(raw):
+            output = Path(raw[idx + 1]); idx += 2
+        elif tok.startswith("--output="):
+            output = Path(tok.split("=", 1)[1]); idx += 1
+        elif tok in ("-b", "--branch"):
+            branch = True; idx += 1
+        elif tok in ("-ss", "--sample-sale"):
+            sample_sale = True; idx += 1
+        elif tok == "--sample-sale-count" and idx + 1 < len(raw):
+            sample_sale_count = int(raw[idx + 1]); idx += 2
+        elif tok.startswith("--sample-sale-count="):
+            sample_sale_count = int(tok.split("=", 1)[1]); idx += 1
+        elif tok == "--mode" and idx + 1 < len(raw):
+            mode = raw[idx + 1]; idx += 2
+        elif tok.startswith("--mode="):
+            mode = tok.split("=", 1)[1]; idx += 1
+        elif tok == "--splice-min" and idx + 1 < len(raw):
+            splice_min = float(raw[idx + 1]); idx += 2
+        elif tok.startswith("--splice-min="):
+            splice_min = float(tok.split("=", 1)[1]); idx += 1
+        elif tok == "--splice-max" and idx + 1 < len(raw):
+            splice_max = float(raw[idx + 1]); idx += 2
+        elif tok.startswith("--splice-max="):
+            splice_max = float(tok.split("=", 1)[1]); idx += 1
+        else:
+            positional.append(tok); idx += 1
+
+    # 2. Split positional tokens: leading existing-file paths → input_files,
+    #    first non-path token onward → step strings.
+    input_file_strs: list[str] = []
+    step_strs: list[str] = []
+    past_inputs = False
+    for tok in positional:
+        if not past_inputs and Path(tok).exists():
+            input_file_strs.append(tok)
+        else:
+            past_inputs = True
+            step_strs.append(tok)
+
+    input_files: list[Path] = [Path(f) for f in input_file_strs]
+    steps: list[str] = step_strs
+
     if not steps:
         console.print("[red]At least one step is required.[/red]")
         raise typer.Exit(1)
 
-    console.print(f"[bold]Loading:[/bold] {input_file}")
-    audio = load_audio(input_file)
-    console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")
+    all_buffers: list[AudioBuffer] = []
+    all_names: list[str] = []
 
-    mode = "branch" if branch else "sequential"
-    console.print(f"[bold]Running {mode} chain[/bold] ({len(steps)} step(s))")
-    for i, step in enumerate(steps, 1):
-        console.print(f"  {i}. {step}")
+    for f in input_files:
+        if not f.exists():
+            console.print(f"[red]File not found: {f}[/red]")
+            raise typer.Exit(1)
+        all_buffers.append(load_audio(f))
+        all_names.append(f.stem)
 
-    if branch:
-        result = run_branch(audio, steps)
+    ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
+    if ss_count > 0:
+        import rottengenizdat.sample_sale as _ss
+        console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
+        index = _ss.sync_index()
+        picks = _ss.pick_random_samples(index, ss_count)
+        for entry in picks:
+            console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
+            path = _ss.download_sample(entry)
+            all_buffers.append(load_audio(path))
+            all_names.append(entry.filename or entry.id)
+
+    if not all_buffers:
+        console.print("[red]No input files provided.[/red]")
+        raise typer.Exit(1)
+
+    input_mode = InputMode.resolve(mode, len(all_buffers))
+    if len(all_buffers) > 1:
+        console.print(f"[bold]Combining {len(all_buffers)} inputs[/bold] (mode={input_mode.value})")
+    combined = combine_inputs(all_buffers, input_mode, splice_min=splice_min, splice_max=splice_max)
+
+    chain_mode = "branch" if branch else "sequential"
+    console.print(f"[bold]Running {chain_mode} chain[/bold] ({len(steps)} step(s))")
+    for i_step, step in enumerate(steps, 1):
+        console.print(f"  {i_step}. {step}")
+
+    if input_mode == InputMode.INDEPENDENT:
+        output.mkdir(parents=True, exist_ok=True)
+        for i_buf, (audio, src_name) in enumerate(zip(combined, all_names)):
+            console.print(f"\n[bold]Processing input {i_buf+1}/{len(combined)}:[/bold] {src_name}")
+            result = run_branch(audio, steps) if branch else run_chain(audio, steps)
+            out_path = output / f"{i_buf+1:03d}-{src_name}.wav"
+            save_audio(result, out_path)
+            console.print(f"[green]Saved:[/green] {out_path}")
     else:
-        result = run_chain(audio, steps)
-
-    save_audio(result, output)
-    console.print(f"[green]Saved:[/green] {output}")
+        audio = combined[0]
+        console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")
+        result = run_branch(audio, steps) if branch else run_chain(audio, steps)
+        save_audio(result, output)
+        console.print(f"[green]Saved:[/green] {output}")
 
 
 # ---------------------------------------------------------------------------
