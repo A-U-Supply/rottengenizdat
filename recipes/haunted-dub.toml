@@ -1,0 +1,19 @@
+[recipe]
+name = "haunted-dub"
+mode = "branch"
+
+# your track + a ghost of itself through vintage RAVE
+# 70% original, 30% haunted — like hearing the reverb tail
+# of a song that was never played
+
+[[steps]]
+effect = "dry"
+weight = 0.7
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 1.3
+noise = 0.15
+dims = "0,1,2,3,4,5"
+weight = 0.3

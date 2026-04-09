@@ -1,0 +1,14 @@
+[recipe]
+name = "needle-drop"
+mode = "sequential"
+
+# subtle — like playing a well-worn record
+# just enough model to add warmth and imperfection
+# the darbouka model adds a faint percussive ghost
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+dims = "0,1"
+temperature = 0.6
+mix = 0.4

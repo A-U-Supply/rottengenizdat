@@ -1,0 +1,21 @@
+[recipe]
+name = "bone-xray"
+mode = "branch"
+
+# the namesake — three models fighting over your track
+# like a bootleg pressed onto three different x-ray films at once
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+temperature = 1.2
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.9
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+temperature = 1.0

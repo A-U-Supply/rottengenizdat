@@ -1,0 +1,25 @@
+[recipe]
+name = "drunk-choir"
+mode = "branch"
+
+# your track sung back to you by several confused neural networks
+# each with a different voice model and a different level of inebriation
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.4
+noise = 0.2
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 0.8
+noise = 0.4
+dims = "4,5,6,7,8"
+
+[[steps]]
+effect = "rave"
+model = "isis"
+temperature = 1.1
+noise = 0.15

@@ -1,0 +1,19 @@
+[recipe]
+name = "bitcrushed-god"
+mode = "sequential"
+
+# extreme quantization through two models
+# your track reduced to its coarsest neural skeleton
+# then that skeleton reinterpreted by a different brain
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+quantize = 1.0
+temperature = 1.5
+
+[[steps]]
+effect = "rave"
+model = "sol_full"
+quantize = 0.5
+temperature = 0.8

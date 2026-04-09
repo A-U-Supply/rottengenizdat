@@ -1,0 +1,25 @@
+[recipe]
+name = "space-sickness"
+mode = "branch"
+
+# mostly your track but with NASA mission audio ghosts
+# and a faint percussive shadow — reversed and quantized
+
+[[steps]]
+effect = "dry"
+weight = 0.6
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.4
+noise = 0.2
+reverse = true
+weight = 0.25
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+quantize = 0.6
+dims = "8,9,10,11,12,13,14,15"
+weight = 0.15

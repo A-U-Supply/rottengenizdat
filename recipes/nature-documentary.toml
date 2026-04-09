@@ -1,0 +1,23 @@
+[recipe]
+name = "nature-documentary"
+mode = "branch"
+
+# your track as interpreted by the natural world
+# nasa mission audio + orchestral instruments = alien wildlife
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.3
+noise = 0.1
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 0.8
+
+[[steps]]
+effect = "rave"
+model = "sol_full"
+temperature = 1.0
+dims = "0,2,4,6,8,10"

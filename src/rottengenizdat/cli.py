@@ -142,14 +142,17 @@ def recipe_run(
     if mode == "branch":
         from rottengenizdat.chain import mix_buffers
         outputs = []
+        weights = []
         for effect_name, kwargs in step_pairs:
             if effect_name not in plugins:
                 console.print(f"[red]Unknown effect: {effect_name}[/red]")
                 raise typer.Exit(1)
-            console.print(f"  [dim]branch:[/dim] {effect_name} {kwargs}")
+            w = kwargs.pop("weight", 1.0)
+            weights.append(float(w))
+            console.print(f"  [dim]branch (weight={w}):[/dim] {effect_name} {kwargs}")
             result = plugins[effect_name]().process(audio, **kwargs)
             outputs.append(result)
-        final = mix_buffers(outputs)
+        final = mix_buffers(outputs, weights)
     else:
         current = audio
         for effect_name, kwargs in step_pairs:

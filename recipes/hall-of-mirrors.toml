@@ -1,0 +1,23 @@
+[recipe]
+name = "hall-of-mirrors"
+mode = "sequential"
+
+# feed your track through the same model three times
+# each pass drifts further from the original
+# like a photocopy of a photocopy of a photocopy
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.9
+dims = "0,1,2,3,4,5"
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 1.0
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 1.1

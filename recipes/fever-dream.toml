@@ -1,0 +1,28 @@
+[recipe]
+name = "fever-dream"
+mode = "sequential"
+
+# total destruction — every knob cranked
+# reverse, shuffle, noise, high temp, all dims
+# what comes out the other side is barely audio
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 2.5
+noise = 0.8
+reverse = true
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+temperature = 2.0
+noise = 0.5
+shuffle_chunks = 3
+quantize = 0.8
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.8
+shuffle_chunks = 2

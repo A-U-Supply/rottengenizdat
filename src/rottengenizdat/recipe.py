@@ -17,6 +17,7 @@ _STEP_KEY_MAP: dict[str, str] = {
     "reverse": "reverse",
     "shuffle_chunks": "shuffle_chunks",
     "quantize": "quantize",
+    "weight": "weight",
 }
 
 

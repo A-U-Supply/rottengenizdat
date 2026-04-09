@@ -1,0 +1,23 @@
+[recipe]
+name = "organ-donor"
+mode = "branch"
+
+# your track transplanted with church organ DNA
+# mostly your song, with orchestral organs bleeding through
+
+[[steps]]
+effect = "dry"
+weight = 0.5
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 0.9
+weight = 0.3
+
+[[steps]]
+effect = "rave"
+model = "sol_full"
+temperature = 1.1
+dims = "2,4,6,8,10,12,14"
+weight = 0.2

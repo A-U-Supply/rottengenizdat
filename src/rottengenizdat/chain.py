@@ -137,19 +137,30 @@ def run_branch(audio: AudioBuffer, steps: list[str]) -> AudioBuffer:
     return mix_buffers(outputs)
 
 
-def mix_buffers(buffers: list[AudioBuffer]) -> AudioBuffer:
-    """Average multiple AudioBuffers together.
+def mix_buffers(
+    buffers: list[AudioBuffer], weights: list[float] | None = None
+) -> AudioBuffer:
+    """Mix multiple AudioBuffers with optional weights.
 
     If buffers differ in length the result is truncated to the shortest.
+    Weights are normalized to sum to 1.0.
 
     Args:
         buffers: Non-empty list of :class:`~rottengenizdat.core.AudioBuffer` objects.
+        weights: Optional per-buffer weights. If None, equal weighting is used.
 
     Returns:
-        A new AudioBuffer whose samples are the element-wise mean of all inputs.
+        A new AudioBuffer whose samples are the weighted sum of all inputs.
     """
     if not buffers:
         raise ValueError("mix_buffers requires at least one buffer")
+    if weights is None:
+        weights = [1.0] * len(buffers)
+    # Normalize weights
+    total = sum(weights)
+    weights = [w / total for w in weights]
     min_len = min(b.num_samples for b in buffers)
-    mixed = sum(b.samples[:, :min_len] for b in buffers) / len(buffers)  # type: ignore[arg-type]
+    mixed = torch.zeros_like(buffers[0].samples[:, :min_len])
+    for buf, w in zip(buffers, weights):
+        mixed = mixed + buf.samples[:, :min_len] * w
     return AudioBuffer(samples=mixed, sample_rate=buffers[0].sample_rate)

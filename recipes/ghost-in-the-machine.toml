@@ -1,0 +1,19 @@
+[recipe]
+name = "ghost-in-the-machine"
+mode = "sequential"
+
+# your track, barely there — like hearing it through a wall
+# dims 0-3 only = mostly preserves structure, just the timbre goes wrong
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+dims = "0,1,2,3"
+temperature = 0.7
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+dims = "0,1"
+temperature = 0.5
+mix = 0.3

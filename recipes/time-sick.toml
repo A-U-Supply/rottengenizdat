@@ -1,0 +1,18 @@
+[recipe]
+name = "time-sick"
+mode = "sequential"
+
+# your track with temporal nausea
+# reverse the latent, then shuffle it into chunks, then quantize
+# the structure is there but the timeline is having a seizure
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+reverse = true
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+shuffle_chunks = 4
+quantize = 0.3

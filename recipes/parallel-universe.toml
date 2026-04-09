@@ -1,0 +1,31 @@
+[recipe]
+name = "parallel-universe"
+mode = "branch"
+
+# your track in four alternate realities
+# each one only touches different latent dimensions
+# so each branch preserves different aspects of the original
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+dims = "0,1,2,3"
+temperature = 1.3
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+dims = "4,5,6,7"
+temperature = 1.3
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+dims = "8,9,10,11"
+temperature = 1.3
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+dims = "12,13,14,15"
+temperature = 1.3

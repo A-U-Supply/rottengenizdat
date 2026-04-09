@@ -1,0 +1,18 @@
+[recipe]
+name = "barely-there"
+mode = "branch"
+
+# the subtlest recipe — 90% your track
+# just a whisper of vintage RAVE on two latent dimensions
+# you might not even notice until you A/B it
+
+[[steps]]
+effect = "dry"
+weight = 0.9
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+dims = "0,1"
+temperature = 0.7
+weight = 0.1
