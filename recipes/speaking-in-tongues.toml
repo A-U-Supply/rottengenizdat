@@ -1,0 +1,47 @@
+[recipe]
+name = "speaking-in-tongues"
+mode = "branch"
+
+# drunk-choir with the inebriation cranked to blackout
+# six voices, high temperature and noise — voices fighting each other
+# discord and glossolalia, barely holding together
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.8
+noise = 0.4
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 2.0
+noise = 0.5
+dims = "0,1,2,3,4,5"
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.5
+noise = 0.6
+dims = "8,9,10,11,12,13,14,15"
+
+[[steps]]
+effect = "rave"
+model = "isis"
+temperature = 1.7
+noise = 0.3
+shuffle_chunks = 8
+
+[[steps]]
+effect = "rave"
+model = "isis"
+temperature = 2.2
+noise = 0.35
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 1.4
+noise = 0.25
+reverse = true
