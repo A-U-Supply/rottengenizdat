@@ -1,0 +1,11 @@
+name = "rottengenizdat-slash-command"
+main = "src/index.ts"
+compatibility_date = "2026-04-09"
+
+# Secrets are set via `wrangler secret put`:
+# wrangler secret put SLACK_SIGNING_SECRET
+# wrangler secret put GITHUB_TOKEN
+# wrangler secret put SLACK_BOT_TOKEN
+
+[vars]
+SLACK_WORKSPACE = "au-supply"

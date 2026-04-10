@@ -1,0 +1,100 @@
+name: rottengenizdat
+
+on:
+  workflow_dispatch:
+    inputs:
+      recipe:
+        description: 'Recipe name (leave empty for random)'
+        default: ''
+      sample_sale_count:
+        description: 'Number of samples to pull from #sample-sale'
+        default: '3'
+      input_mode:
+        description: 'Input combination mode: splice, concat, independent'
+        default: 'splice'
+      audio_urls:
+        description: 'Comma-separated audio/video URLs (optional)'
+        default: ''
+
+jobs:
+  rottengenizdat:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          pip install uv
+          uv pip install --system -e ".[torch]"
+
+      - name: Pick recipe
+        id: recipe
+        run: |
+          RECIPE="${{ inputs.recipe }}"
+          if [ -z "$RECIPE" ]; then
+            RECIPE=$(ls recipes/*.toml | shuf -n1 | xargs -I{} basename {} .toml)
+            echo "Randomly selected: $RECIPE"
+          fi
+          echo "name=$RECIPE" >> "$GITHUB_OUTPUT"
+
+      - name: Run rottengenizdat
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          CMD="rotten recipe run recipes/${{ steps.recipe.outputs.name }}.toml"
+          CMD="$CMD --sample-sale-count ${{ inputs.sample_sale_count }}"
+          if [ "${{ inputs.input_mode }}" != "splice" ]; then
+            CMD="$CMD --mode ${{ inputs.input_mode }}"
+          fi
+          CMD="$CMD -o output.wav"
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Post result to Slack
+        if: success()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          RECIPE="${{ steps.recipe.outputs.name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          # Upload the audio file
+          UPLOAD_RESPONSE=$(curl -s -X POST https://slack.com/api/files.getUploadURLExternal \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -d "filename=rottengenizdat-${RECIPE}.wav" \
+            -d "length=$(stat -c%s output.wav)")
+
+          UPLOAD_URL=$(echo "$UPLOAD_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['upload_url'])")
+          FILE_ID=$(echo "$UPLOAD_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['file_id'])")
+
+          curl -s -X POST "$UPLOAD_URL" \
+            -F "file=@output.wav"
+
+          curl -s -X POST https://slack.com/api/files.completeUploadExternal \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${RECIPE}\"}], \"channel_id\": \"sample-sale\", \"initial_comment\": \":radio: *rottengenizdat: ${RECIPE}* \\n<${RUN_URL}|View logs>\"}"
+
+      - name: Notify Slack on failure
+        if: failure()
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          RECIPE="${{ steps.recipe.outputs.name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -s -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\": \"sample-sale\", \"text\": \":x: rottengenizdat run failed (recipe: ${RECIPE}). <${RUN_URL}|View logs>\"}"
