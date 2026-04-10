@@ -74,6 +74,7 @@ jobs:
         run: |
           pip install uv
           uv pip install --system -e ".[torch]"
+          pip install yt-dlp
 
       - name: Pick recipe
         id: recipe
@@ -154,23 +155,16 @@ jobs:
         run: |
           LABEL="${{ steps.label.outputs.name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-          # Upload the audio file
-          UPLOAD_RESPONSE=$(curl -s -X POST https://slack.com/api/files.getUploadURLExternal \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -d "filename=rottengenizdat-${LABEL}.wav" \
-            -d "length=$(stat -c%s output.wav)")
-
-          UPLOAD_URL=$(echo "$UPLOAD_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['upload_url'])")
-          FILE_ID=$(echo "$UPLOAD_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['file_id'])")
-
-          curl -s -X POST "$UPLOAD_URL" \
-            -F "file=@output.wav"
-
-          curl -s -X POST https://slack.com/api/files.completeUploadExternal \
-            -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -H "Content-Type: application/json" \
-            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${LABEL}\"}], \"channel_id\": \"C0ARZFZ5KLJ\", \"initial_comment\": \":radio: *rottengenizdat: ${LABEL}* \\n<${RUN_URL}|View logs>\"}"
+          SOURCES_FLAG=""
+          if [ -f sources.json ]; then
+            SOURCES_FLAG="--sources sources.json"
+          fi
+          rotten slack-post output.wav \
+            --label "$LABEL" \
+            --channel C0ARZFZ5KLJ \
+            --source-channel C07QNGDTBR6 \
+            --run-url "$RUN_URL" \
+            $SOURCES_FLAG
 
       - name: Notify Slack on failure
         if: failure()

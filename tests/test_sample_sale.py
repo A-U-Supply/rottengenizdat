@@ -118,6 +118,27 @@ class TestExtractMedia:
         assert entries[0].type == "link"
         assert "youtube.com" in entries[0].url
 
+    def test_extracts_user_from_message(self):
+        messages = [
+            {
+                "ts": "1700000001.000100",
+                "user": "U12345ABC",
+                "files": [
+                    {
+                        "id": "F001",
+                        "name": "beat.wav",
+                        "mimetype": "audio/wav",
+                        "url_private_download": "https://files.slack.com/beat.wav",
+                    }
+                ],
+                "text": "check this out https://youtube.com/watch?v=xyz",
+            }
+        ]
+        entries = extract_media_from_messages(messages)
+        assert len(entries) == 2
+        assert entries[0].user == "U12345ABC"
+        assert entries[1].user == "U12345ABC"
+
     def test_no_duplicate_ids(self):
         messages = [
             {

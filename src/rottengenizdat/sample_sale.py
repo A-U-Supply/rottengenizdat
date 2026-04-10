@@ -27,6 +27,7 @@ class IndexEntry:
     id: str
     type: str
     message_ts: str
+    user: str = ""
     filename: str = ""
     mime: str = ""
     slack_url: str = ""
@@ -74,6 +75,7 @@ def extract_media_from_messages(messages: list[dict]) -> list[IndexEntry]:
 
     for msg in messages:
         ts = msg.get("ts", "")
+        msg_user = msg.get("user", "")
 
         for file_info in msg.get("files", []):
             mime = file_info.get("mimetype", "")
@@ -93,6 +95,7 @@ def extract_media_from_messages(messages: list[dict]) -> list[IndexEntry]:
                     slack_url=file_info.get("url_private_download", ""),
                     cached_path=f"{SAMPLES_DIRNAME}/{file_id}-{filename}",
                     message_ts=ts,
+                    user=msg_user,
                 )
             )
 
@@ -109,6 +112,7 @@ def extract_media_from_messages(messages: list[dict]) -> list[IndexEntry]:
                     url=url,
                     cached_path=f"{SAMPLES_DIRNAME}/{entry_id}.wav",
                     message_ts=ts,
+                    user=msg_user,
                 )
             )
 
@@ -184,7 +188,7 @@ def download_sample(
         if not shutil.which("yt-dlp"):
             raise RuntimeError(
                 "yt-dlp is not installed. Install it to download linked media:\n"
-                "  brew install yt-dlp"
+                "  pip install yt-dlp"
             )
         result = subprocess.run(
             [
