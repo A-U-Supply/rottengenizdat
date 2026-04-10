@@ -134,6 +134,41 @@ def register_plugins() -> None:
 register_plugins()
 
 
+def _fetch_audio_urls(
+    urls: list[str],
+) -> tuple[list[AudioBuffer], list[str], list[IndexEntry]]:
+    """Download user-provided URLs via yt-dlp and return loaded audio.
+
+    Returns (buffers, names, picks) — same shape as _fetch_samples so
+    callers can treat them identically.
+    """
+    import rottengenizdat.sample_sale as _ss
+
+    buffers: list[AudioBuffer] = []
+    names: list[str] = []
+    picks: list[IndexEntry] = []
+
+    for url in urls:
+        entry = IndexEntry(
+            id=_ss._url_hash(url),
+            type="link",
+            url=url,
+            cached_path=f"{_ss.SAMPLES_DIRNAME}/{_ss._url_hash(url)}.wav",
+            message_ts="",
+        )
+        console.print(f"  [dim]URL:[/dim] {url}")
+        try:
+            path = _ss.download_sample(entry)
+            buf = load_audio(path)
+            buffers.append(buf)
+            names.append(url.rsplit("/", 1)[-1] or entry.id)
+            picks.append(entry)
+        except Exception as e:
+            console.print(f"  [yellow]Skipped (download failed):[/yellow] {url}: {e}")
+
+    return buffers, names, picks
+
+
 def _fetch_samples(
     count: int,
     index: list[IndexEntry],
@@ -301,6 +336,7 @@ def chain_command(ctx: typer.Context) -> None:
     branch: bool = False
     sample_sale: bool = False
     sample_sale_count: int = 0
+    audio_urls_raw: str = ""
     mode: Optional[str] = None
     splice_min: float = 0.25
     splice_max: float = 4.0
@@ -321,6 +357,10 @@ def chain_command(ctx: typer.Context) -> None:
             sample_sale_count = int(raw[idx + 1]); idx += 2
         elif tok.startswith("--sample-sale-count="):
             sample_sale_count = int(tok.split("=", 1)[1]); idx += 1
+        elif tok == "--audio-urls" and idx + 1 < len(raw):
+            audio_urls_raw = raw[idx + 1]; idx += 2
+        elif tok.startswith("--audio-urls="):
+            audio_urls_raw = tok.split("=", 1)[1]; idx += 1
         elif tok == "--mode" and idx + 1 < len(raw):
             mode = raw[idx + 1]; idx += 2
         elif tok.startswith("--mode="):
@@ -335,6 +375,8 @@ def chain_command(ctx: typer.Context) -> None:
             splice_max = float(tok.split("=", 1)[1]); idx += 1
         else:
             positional.append(tok); idx += 1
+
+    audio_urls = [u.strip() for u in audio_urls_raw.split(",") if u.strip()] if audio_urls_raw else []
 
     # 2. Split positional tokens: leading existing-file paths → input_files,
     #    first non-path token onward → step strings.
@@ -369,14 +411,25 @@ def chain_command(ctx: typer.Context) -> None:
         all_buffers.append(load_audio(f))
         all_names.append(f.stem)
 
+    # User-provided URLs fill sample slots first
+    if audio_urls:
+        console.print(f"[bold]Downloading {len(audio_urls)} user-provided URL(s)...[/bold]")
+        url_bufs, url_names, url_picks = _fetch_audio_urls(audio_urls)
+        all_buffers.extend(url_bufs)
+        all_names.extend(url_names)
+        ss_picks.extend(url_picks)
+
+    # Backfill remaining slots with random #sample-sale picks
     ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
-    if ss_count > 0:
+    backfill = max(0, ss_count - len(audio_urls))
+    if backfill > 0:
         import rottengenizdat.sample_sale as _ss
-        console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
+        console.print(f"[bold]Fetching {backfill} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        ss_bufs, ss_names, ss_picks = _fetch_samples(ss_count, index)
+        ss_bufs, ss_names, backfill_picks = _fetch_samples(backfill, index)
         all_buffers.extend(ss_bufs)
         all_names.extend(ss_names)
+        ss_picks.extend(backfill_picks)
 
     if not all_buffers:
         console.print("[red]No input files provided.[/red]")
@@ -503,6 +556,7 @@ def recipe_run(
     output: Annotated[Path, typer.Option("--output", "-o", help="Output file or directory (for --mode independent)")] = Path("output.wav"),
     sample_sale: Annotated[bool, typer.Option("--sample-sale", "-ss", help="Include random samples from #sample-sale")] = False,
     sample_sale_count: Annotated[int, typer.Option("--sample-sale-count", help="How many samples to pull (implies --sample-sale)")] = 0,
+    audio_urls: Annotated[str, typer.Option("--audio-urls", help="Comma-separated audio/video URLs (prioritized over random samples)")] = "",
     mode: Annotated[Optional[str], typer.Option("--mode", help="Input combination mode: splice (default for multi), concat, independent")] = None,
     splice_min: Annotated[float, typer.Option("--splice-min", help="Min splice segment duration in seconds")] = 0.25,
     splice_max: Annotated[float, typer.Option("--splice-max", help="Max splice segment duration in seconds")] = 4.0,
@@ -555,15 +609,26 @@ def recipe_run(
         all_buffers.append(load_audio(f))
         all_names.append(f.stem)
 
-    # Sample-sale samples
+    # User-provided URLs fill sample slots first
+    url_list = [u.strip() for u in audio_urls.split(",") if u.strip()] if audio_urls else []
+    if url_list:
+        console.print(f"[bold]Downloading {len(url_list)} user-provided URL(s)...[/bold]")
+        url_bufs, url_names, url_picks = _fetch_audio_urls(url_list)
+        all_buffers.extend(url_bufs)
+        all_names.extend(url_names)
+        ss_picks.extend(url_picks)
+
+    # Backfill remaining slots with random #sample-sale picks
     ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
-    if ss_count > 0:
+    backfill = max(0, ss_count - len(url_list))
+    if backfill > 0:
         import rottengenizdat.sample_sale as _ss
-        console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
+        console.print(f"[bold]Fetching {backfill} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        ss_bufs, ss_names, ss_picks = _fetch_samples(ss_count, index)
+        ss_bufs, ss_names, backfill_picks = _fetch_samples(backfill, index)
         all_buffers.extend(ss_bufs)
         all_names.extend(ss_names)
+        ss_picks.extend(backfill_picks)
 
     if not all_buffers:
         console.print("[red]No input files provided. Pass audio files or use --sample-sale.[/red]")
