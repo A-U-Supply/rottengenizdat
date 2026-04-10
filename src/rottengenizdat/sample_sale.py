@@ -246,19 +246,29 @@ def download_sample(
                 "yt-dlp is not installed. Install it to download linked media:\n"
                 "  pip install yt-dlp"
             )
-        result = subprocess.run(
-            [
-                "yt-dlp",
-                "--extract-audio",
-                "--audio-format", "wav",
-                "--output", str(local_path),
-                entry.url,
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"yt-dlp failed for {entry.url}: {result.stderr}")
+        # Use a temp directory so yt-dlp can name files however it wants,
+        # then move the result to our expected cache path.
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            result = subprocess.run(
+                [
+                    "yt-dlp",
+                    "--extract-audio",
+                    "--audio-format", "wav",
+                    "--output", f"{tmp}/%(id)s.%(ext)s",
+                    entry.url,
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"yt-dlp failed for {entry.url}: {result.stderr}")
+            wavs = list(Path(tmp).glob("*.wav"))
+            if not wavs:
+                raise RuntimeError(
+                    f"yt-dlp produced no .wav file for {entry.url}"
+                )
+            shutil.move(str(wavs[0]), str(local_path))
 
     return local_path
 
