@@ -175,26 +175,41 @@ export async function handleInteraction(
 
         // Dispatch in background — modal must respond immediately
         const work = (async () => {
-          const [ok, usage] = await Promise.all([
-            dispatchWorkflow(env, resolvedRecipe, sampleCount, inputMode, urls),
-            fetchActionsUsage(env),
-          ]);
+          let ok = false;
+          let dispatchError = "";
+          let usage: Awaited<ReturnType<typeof fetchActionsUsage>> = null;
 
-          if (channelId) {
+          try {
+            const results = await Promise.allSettled([
+              dispatchWorkflow(env, resolvedRecipe, sampleCount, inputMode, urls),
+              fetchActionsUsage(env),
+            ]);
+            ok = results[0].status === "fulfilled" && results[0].value === true;
+            if (results[0].status === "rejected") {
+              dispatchError = String(results[0].reason);
+            }
+            if (results[1].status === "fulfilled") {
+              usage = results[1].value;
+            }
+          } catch (err) {
+            dispatchError = String(err);
+          }
+
+          // Always post feedback
+          const postTo = channelId || undefined;
+          if (postTo) {
             const msg = ok
               ? `:radio: Firing up *${recipeName}* with ${sampleCount} sample(s) (${inputMode})... results incoming.`
-              : `:warning: Failed to dispatch workflow.`;
-            const blocks = ok ? confirmationBlocks(msg) : undefined;
-            if (blocks && usage) blocks.push(buildUsageContextShort(usage));
-            const body: Record<string, unknown> = { channel: channelId, user: userId, text: msg };
-            if (blocks) body.blocks = blocks;
+              : `:warning: Failed to dispatch workflow.${dispatchError ? ` Error: ${dispatchError}` : ""}`;
+            const blocks = confirmationBlocks(msg);
+            if (usage) blocks.push(buildUsageContextShort(usage));
             await fetch("https://slack.com/api/chat.postEphemeral", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
               },
-              body: JSON.stringify(body),
+              body: JSON.stringify({ channel: postTo, user: userId, text: msg, blocks }),
             });
           }
         })();
