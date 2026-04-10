@@ -86,6 +86,7 @@ export function buildHelpView(): object {
       type: "mrkdwn",
       text: [
         "`/rottengenizdat` \u2014 Open the recipe picker modal",
+        "`/rottengenizdat custom` \u2014 Open the custom chain builder",
         "`/rottengenizdat <recipe>` \u2014 Run a specific recipe directly",
         "`/rottengenizdat list` \u2014 Show all recipes grouped by mode",
         "`/rottengenizdat status` \u2014 Recent workflow run status",
@@ -177,6 +178,277 @@ export function buildStatusView(runs: WorkflowRun[], usage?: ActionsUsage | null
     callback_id: "rottengenizdat_status",
     title: { type: "plain_text", text: "Status" },
     close: { type: "plain_text", text: "Back" },
+    blocks,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Custom modal helpers
+// ---------------------------------------------------------------------------
+
+const MODELS = [
+  "percussion", "vintage", "VCTK", "nasa", "musicnet",
+  "isis", "sol_ordinario", "sol_full", "sol_ordinario_fast", "darbouka_onnx",
+];
+
+const TEMPERATURE_OPTIONS = ["0.3", "0.5", "0.7", "0.9", "1.0", "1.2", "1.5", "2.0", "2.5"];
+const NOISE_OPTIONS = ["0.0", "0.1", "0.2", "0.3", "0.5", "0.8"];
+const MIX_OPTIONS = ["0.3", "0.5", "0.7", "1.0"];
+const SHUFFLE_OPTIONS = ["2", "3", "4", "6", "8"];
+const QUANTIZE_OPTIONS = ["0.1", "0.3", "0.5", "0.7", "1.0"];
+
+function opt(text: string, value?: string): object {
+  return { text: { type: "plain_text", text }, value: value ?? text };
+}
+
+/** Build blocks for a single effect step in the custom modal. */
+function buildStepBlocks(stepNum: number, required: boolean): object[] {
+  const prefix = `step${stepNum}`;
+  const blocks: object[] = [];
+
+  // Step header
+  blocks.push({
+    type: "header",
+    text: { type: "plain_text", text: `Step ${stepNum}${required ? "" : " (optional)"}` },
+  });
+
+  // Model select
+  const modelOptions = required
+    ? MODELS.map((m) => opt(m))
+    : [opt("— skip —", "none"), ...MODELS.map((m) => opt(m))];
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_model_block`,
+    optional: !required,
+    label: { type: "plain_text", text: "Model" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_model`,
+      ...(required
+        ? { initial_option: opt("vintage") }
+        : { initial_option: opt("— skip —", "none") }),
+      options: modelOptions,
+    },
+  });
+
+  // Temperature
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_temp_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Temperature" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_temp`,
+      initial_option: opt("1.0"),
+      options: TEMPERATURE_OPTIONS.map((v) => opt(v)),
+    },
+  });
+
+  // Noise
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_noise_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Noise" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_noise`,
+      initial_option: opt("0.0"),
+      options: NOISE_OPTIONS.map((v) => opt(v)),
+    },
+  });
+
+  // Mix (wet/dry)
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_mix_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Mix (wet/dry)" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_mix`,
+      initial_option: opt("1.0"),
+      options: MIX_OPTIONS.map((v) => opt(v)),
+    },
+  });
+
+  // Dims (multi-select)
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_dims_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Dims (all if none selected)" },
+    element: {
+      type: "multi_static_select",
+      action_id: `${prefix}_dims`,
+      placeholder: { type: "plain_text", text: "Select dims..." },
+      options: Array.from({ length: 16 }, (_, i) => opt(String(i))),
+    },
+  });
+
+  // Reverse + Shuffle + Quantize on one row would be nice but Slack doesn't
+  // support inline inputs, so they each get their own block.
+
+  // Reverse (checkbox)
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_reverse_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Reverse latent" },
+    element: {
+      type: "checkboxes",
+      action_id: `${prefix}_reverse`,
+      options: [opt("Reverse", "true")],
+    },
+  });
+
+  // Shuffle chunks
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_shuffle_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Shuffle chunks" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_shuffle`,
+      placeholder: { type: "plain_text", text: "None" },
+      options: SHUFFLE_OPTIONS.map((v) => opt(v)),
+    },
+  });
+
+  // Quantize
+  blocks.push({
+    type: "input",
+    block_id: `${prefix}_quantize_block`,
+    optional: true,
+    label: { type: "plain_text", text: "Quantize" },
+    element: {
+      type: "static_select",
+      action_id: `${prefix}_quantize`,
+      placeholder: { type: "plain_text", text: "None" },
+      options: QUANTIZE_OPTIONS.map((v) => opt(v)),
+    },
+  });
+
+  return blocks;
+}
+
+/** Build the Custom modal view with up to 3 effect steps and all knobs. */
+export function buildCustomModalView(channelId: string = ""): object {
+  const blocks: object[] = [];
+
+  // Description
+  blocks.push({
+    type: "section",
+    text: {
+      type: "mrkdwn",
+      text: "Build a custom effect chain. Pick models, tweak every knob, chain up to 3 steps.",
+    },
+  });
+  blocks.push({ type: "divider" });
+
+  // Chain mode
+  blocks.push({
+    type: "input",
+    block_id: "chain_mode_block",
+    label: { type: "plain_text", text: "Chain mode" },
+    element: {
+      type: "static_select",
+      action_id: "chain_mode_select",
+      initial_option: opt("Sequential (each step feeds the next)", "sequential"),
+      options: [
+        opt("Sequential (each step feeds the next)", "sequential"),
+        opt("Branch (all steps in parallel, mix outputs)", "branch"),
+      ],
+    },
+  });
+
+  // Steps
+  blocks.push(...buildStepBlocks(1, true));
+  blocks.push({ type: "divider" });
+  blocks.push(...buildStepBlocks(2, false));
+  blocks.push({ type: "divider" });
+  blocks.push(...buildStepBlocks(3, false));
+  blocks.push({ type: "divider" });
+
+  // Input options header
+  blocks.push({
+    type: "header",
+    text: { type: "plain_text", text: "Input" },
+  });
+
+  // Sample count
+  blocks.push({
+    type: "input",
+    block_id: "custom_sample_count_block",
+    label: { type: "plain_text", text: "Sample count" },
+    element: {
+      type: "static_select",
+      action_id: "custom_sample_count_select",
+      initial_option: opt("3"),
+      options: [opt("1"), opt("2"), opt("3"), opt("4"), opt("5")],
+    },
+  });
+
+  // Input mode
+  blocks.push({
+    type: "input",
+    block_id: "custom_input_mode_block",
+    label: { type: "plain_text", text: "Input mode" },
+    element: {
+      type: "static_select",
+      action_id: "custom_input_mode_select",
+      initial_option: opt("Splice (chop & shuffle)", "splice"),
+      options: [
+        opt("Splice (chop & shuffle)", "splice"),
+        opt("Concat (end-to-end)", "concat"),
+        opt("Blend (each through chain, mix outputs)", "blend"),
+        opt("Independent (each separately)", "independent"),
+      ],
+    },
+  });
+
+  // Audio URLs
+  blocks.push({
+    type: "input",
+    block_id: "custom_urls_block",
+    optional: true,
+    label: { type: "plain_text", text: "Audio URLs" },
+    element: {
+      type: "plain_text_input",
+      action_id: "custom_audio_urls",
+      multiline: true,
+      placeholder: { type: "plain_text", text: "Paste URLs, one per line (optional)" },
+    },
+  });
+
+  // Footer
+  blocks.push({ type: "divider" });
+  blocks.push({
+    type: "actions",
+    block_id: "custom_footer_actions",
+    elements: [
+      {
+        type: "button",
+        text: { type: "plain_text", text: "\ud83d\udce1 Status", emoji: true },
+        action_id: "modal_open_status",
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "\u2753 Help", emoji: true },
+        action_id: "modal_open_help",
+      },
+    ],
+  });
+
+  return {
+    type: "modal",
+    callback_id: "rottengenizdat_custom",
+    private_metadata: channelId,
+    title: { type: "plain_text", text: "Custom Chain" },
+    submit: { type: "plain_text", text: "Mangle" },
+    close: { type: "plain_text", text: "Cancel" },
     blocks,
   };
 }
@@ -300,6 +572,11 @@ export function buildModalView(channelId: string = ""): object {
         type: "actions",
         block_id: "modal_footer_actions",
         elements: [
+          {
+            type: "button",
+            text: { type: "plain_text", text: "\ud83d\udd27 Custom", emoji: true },
+            action_id: "modal_open_custom",
+          },
           {
             type: "button",
             text: { type: "plain_text", text: "\ud83d\udce1 Status", emoji: true },
