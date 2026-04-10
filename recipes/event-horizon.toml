@@ -1,0 +1,24 @@
+[recipe]
+name = "event-horizon"
+mode = "sequential"
+
+# audio sucked into a black hole — each step pulls closer to nothingness
+# dimensions shrink as temperature rises
+# by the end only the coarsest structure survives, white-hot and distorted
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.0
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.5
+dims = "0,1,2,3,4,5,6,7"
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 2.0
+dims = "0,1,2,3"

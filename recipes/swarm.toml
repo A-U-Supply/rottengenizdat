@@ -1,0 +1,49 @@
+[recipe]
+name = "swarm"
+mode = "branch"
+
+# seven models at equal weight — a swarm of neural interpretations
+# no single model dominates, so the result is a consensus hallucination
+# each brain hears something different in your track
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+temperature = 1.1
+weight = 0.15
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.9
+weight = 0.15
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.0
+weight = 0.15
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.2
+weight = 0.15
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+temperature = 1.0
+weight = 0.15
+
+[[steps]]
+effect = "rave"
+model = "isis"
+temperature = 0.9
+weight = 0.1
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 1.0
+weight = 0.15

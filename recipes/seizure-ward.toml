@@ -1,0 +1,24 @@
+[recipe]
+name = "seizure-ward"
+mode = "sequential"
+
+# extreme temporal manipulation — the timeline folded back on itself
+# reverse, shuffle, reverse again through different models
+# structure is recognizable but time is thoroughly broken
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+reverse = true
+shuffle_chunks = 3
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+shuffle_chunks = 2
+reverse = true
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+shuffle_chunks = 4

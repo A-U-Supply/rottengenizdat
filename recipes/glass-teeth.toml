@@ -1,0 +1,25 @@
+[recipe]
+name = "glass-teeth"
+mode = "sequential"
+
+# audio shattered into crystalline shards
+# descending quantization through three models — each one
+# crunches what the last one left, creating jagged staircase artifacts
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+quantize = 0.7
+temperature = 1.2
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+quantize = 0.4
+temperature = 0.8
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+quantize = 0.2
+temperature = 0.6

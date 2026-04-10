@@ -2,6 +2,14 @@
 
 Recipes are TOML files that store named effect chains for reuse. Instead of typing out a long `rotten chain` command every time, save it as a recipe and run it by name. Each recipe defines a series of processing steps and a mode that controls how those steps combine.
 
+rottengenizdat ships with **41 built-in recipes** organized into categories: lo-fi, ambient, vocal, space, glitch, harsh, cinematic, and more. Browse them:
+
+```bash
+rotten recipe list                # all 41 recipes, organized by category
+rotten recipe list ambient        # filter by category
+rotten recipe list glitch         # filter by category
+```
+
 ## Running a recipe
 
 ```bash
@@ -99,7 +107,7 @@ Each `[[steps]]` entry supports these fields:
 
 ## Built-in recipes
 
-Ordered from subtle to chaotic:
+The full categorized catalog is in the [main README](../README.md#recipes) and via `rotten recipe list`. Below are detailed TOML breakdowns for a selection of recipes showing how different techniques work:
 
 ---
 

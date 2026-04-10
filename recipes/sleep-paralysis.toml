@@ -1,0 +1,33 @@
+[recipe]
+name = "sleep-paralysis"
+mode = "branch"
+
+# can't move, can't wake up
+# reversed latent voices and strings pin you down
+# the original plays at a whisper underneath — just enough to know where you are
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.2
+reverse = true
+weight = 0.35
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 0.8
+reverse = true
+weight = 0.3
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.0
+reverse = true
+noise = 0.1
+weight = 0.25
+
+[[steps]]
+effect = "dry"
+weight = 0.1

@@ -1,0 +1,18 @@
+[recipe]
+name = "granular"
+mode = "sequential"
+
+# granular synthesis through neural networks
+# tiny shuffle chunks break audio into micro-particles
+# two different models each scatter the grains differently
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+shuffle_chunks = 2
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+shuffle_chunks = 2
+temperature = 1.1

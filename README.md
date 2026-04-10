@@ -36,6 +36,10 @@ rotten rave input.wav -m nasa -t 1.5 -n 0.2 -d 0,1,2,3 -o space.wav
 # Chain multiple effects in sequence
 rotten chain input.wav "rave -m percussion -t 1.2" "rave -m vintage" -o out.wav
 
+# Browse the 41 built-in recipes
+rotten recipe list
+rotten recipe list ambient
+
 # Run a built-in recipe
 rotten recipe run recipes/bone-xray.toml input.wav -o out.wav
 
@@ -269,59 +273,129 @@ Each step is a quoted string using the same flags as the `rave` command:
 
 ## Recipes
 
-Recipes are TOML files that store named chains for easy reuse. rottengenizdat ships with 14 built-in recipes ranging from barely-noticeable to total sonic destruction.
+Recipes are TOML files that store named chains for easy reuse. rottengenizdat ships with **41 built-in recipes** organized into categories. Browse them from the command line:
 
-```
-░░░ SUBTLE ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ CHAOTIC ███
-
-barely-there                              fever-dream
-needle-drop                            bitcrushed-god
-ghost-in-the-machine                speaking-in-tongues
-haunted-dub                            drunk-choir
-organ-donor                            time-sick
-space-sickness                       hall-of-mirrors
-nature-documentary                   parallel-universe
-choir-practice                         bone-xray
-choir-of-ghosts                      congregation
+```bash
+rotten recipe list                # all 41 recipes, organized by category
+rotten recipe list ambient        # filter by category
+rotten recipe list glitch         # filter by category
 ```
 
-### Recipe Catalog
+### Lo-fi / Analog
+*warm, degraded, nostalgic*
 
 **barely-there** — 90% original + 10% vintage whisper on 2 dims. A/B it to even tell. The gentlest touch. *(branch)*
 
 **needle-drop** — Like playing a well-worn record. Warm vintage model on 2 dims at low temp, mixed 40% wet. *(sequential)*
 
+**haunted-dub** — Your track + a vintage ghost with noise. Like hearing the reverb tail of a song that was never played. *(branch)*
+
+**tape-hiss** — A cassette dubbed too many times. Three vintage passes with rising noise — by the third generation the fidelity is shot but the vibe is immaculate. *(sequential)*
+
+**amber** — Audio preserved in amber. Very low temperature smooths everything toward the model's average. Like finding a wax cylinder in an attic. *(sequential)*
+
+**ribs** — The actual roentgenizdat effect. Audio pressed onto a used X-ray and played back on a crappy homemade turntable. Noisy, degraded, but you can still make out the song. *(sequential)*
+
+### Ambient / Drone
+*pads, textures, drones*
+
+**slow-nerve** — Neural network as synthesizer. Any input becomes a warm pad. Low temp strings and orchestral blur together. *(branch)*
+
+**prayer-wheel** — Four models at nearly identical low settings on structural dims. Meditative, droning — differences between models create a shimmering interference pattern. *(branch)*
+
+**underwater** — Submerged. Only the lowest dims survive, low temp smooths out all detail. Hearing music through water. *(branch)*
+
+### Spatial / Uncanny
+*ghostly, liminal, eerie*
+
 **ghost-in-the-machine** — Heard through a wall. Two models in sequence, each touching only a few dims. Timbre goes wrong but structure stays. *(sequential)*
 
-**haunted-dub** — 70% your track + 30% vintage ghost with noise. Like hearing the reverb tail of a song that was never played. *(branch)*
+**phantom-limb** — The original is gone but you still feel it. Heavy RAVE processing with a 2% dry whisper — just enough ghost of the source to be unsettling. *(branch)*
 
-**organ-donor** — 50% original, transplanted with orchestral string DNA from sol_ordinario and sol_full models. *(branch)*
+**sleep-paralysis** — Can't move, can't wake up. Reversed latent voices and strings pin you down while the original plays at a whisper underneath. *(branch)*
 
-**space-sickness** — 60% original + reversed NASA ghosts + faint quantized percussion shadow. *(branch)*
+### Rhythmic / Percussive
+*beats, pulse, world*
 
-**nature-documentary** — NASA + orchestral strings = alien wildlife soundtrack. Three models in parallel. *(branch)*
+**darbouka-dream** — Middle Eastern hand-drum color from darbouka_onnx with isis resonance. Rhythmic and exotic, even from non-percussive input. *(branch)*
 
-**bone-xray** — The namesake. Three models (percussion, vintage, musicnet) fighting over your track — like a bootleg pressed onto three X-ray films at once. *(branch)*
+**skull-radio** — Hearing music through bone conduction. Percussive skeleton carries the rhythm, vintage adds warmth, faint VCTK gives it an eerie human quality. *(branch)*
 
-**parallel-universe** — Four models, each only touching 4 latent dims. Four alternate realities blended together. *(branch)*
-
-**hall-of-mirrors** — Same model (vintage) three times in sequence, temperature creeping up. A photocopy of a photocopy of a photocopy. *(sequential)*
+### Vocal / Choir
+*speech-shaped, choral, eerie*
 
 **drunk-choir** — Two VCTK voice models + isis, each with noise. Your track sung back by confused neural networks. *(branch)*
 
 **choir-practice** — Drunk-choir's bigger sibling. Five VCTK voices at staggered temperatures plus isis. Dense, warm, unmistakably choral. *(branch)*
 
-**congregation** — Maximum vocal density. Seven voices from four voice-like models (VCTK, isis, sol_ordinario, sol_full), each emphasizing different latent dimensions so they don't collapse into mush. A wall of neural singers. *(branch)*
+**congregation** — Maximum vocal density. Seven voices from four voice-like models, each emphasizing different latent dimensions so they don't collapse into mush. A wall of neural singers. *(branch)*
 
-**speaking-in-tongues** — Drunk-choir with the inebriation cranked to blackout. Six voices, high temperature and noise, with shuffle and reverse. Discord and glossolalia, barely holding together. *(branch)*
+**speaking-in-tongues** — Drunk-choir with the inebriation cranked to blackout. Six voices, high temperature and noise, with shuffle and reverse. Discord and glossolalia. *(branch)*
 
 **choir-of-ghosts** — Three drunk-choir runs layered together. Voices built on voices — dense, smeared, layered deep. Like hearing a choir through the memory of another choir. *(branch, nested)*
 
+**motor-mouth** — Three sequential VCTK passes. First shapes structure, second adds vocal character, third pushes it fully into uncanny-valley mouth territory. Everything becomes speech. *(sequential)*
+
+### Space / Cosmic
+*alien, transmissions, vast*
+
+**space-sickness** — 60% original + reversed NASA ghosts + faint quantized percussion shadow. *(branch)*
+
+**nature-documentary** — NASA + orchestral strings = alien wildlife soundtrack. Three models in parallel. *(branch)*
+
+**event-horizon** — Audio sucked into a black hole. Sequential NASA with shrinking dims and rising temp. By the end only the coarsest structure survives, white-hot and distorted. *(sequential)*
+
+**shortwave** — Numbers station vibes. Quantized NASA gives static and transmission artifacts, faint VCTK adds ghostly speech fragments. Tuning through radio bands at 3am. *(branch)*
+
+### Glitch / Temporal
+*stutters, fragmentation, time-fuckery*
+
 **time-sick** — Temporal nausea: reverse the latent, shuffle it into chunks, quantize. Structure is there but the timeline is having a seizure. *(sequential)*
+
+**granular** — Granular synthesis through neural networks. Tiny shuffle chunks break audio into micro-particles, two models scatter the grains differently. *(sequential)*
+
+**bad-reception** — A TV losing signal. Shuffle creates stuttering, noise fills the gaps, quantize snaps what's left into harsh digital steps. *(sequential)*
+
+**seizure-ward** — Extreme temporal manipulation. Reverse, shuffle, reverse again through three different models. Timeline folded back on itself. *(sequential)*
+
+### Multi-Model Blends
+*many models at once*
+
+**bone-xray** — The namesake. Three models (percussion, vintage, musicnet) fighting over your track — like a bootleg pressed onto three X-ray films at once. *(branch)*
+
+**parallel-universe** — Four models, each only touching 4 latent dims. Four alternate realities blended together. *(branch)*
+
+**swarm** — Seven models at equal weight. No single model dominates — the result is a consensus hallucination. Each brain hears something different in your track. *(branch)*
+
+**dimension-skip** — Eight models, each touching only 2 adjacent dims. Eight parallel slivers of reality superimposed. *(branch)*
+
+### Harsh / Industrial
+*crushing, grinding, violent*
+
+**hall-of-mirrors** — Same model (vintage) three times in sequence, temperature creeping up. A photocopy of a photocopy of a photocopy. *(sequential)*
 
 **bitcrushed-god** — Extreme quantization through two models. Your track reduced to its coarsest neural skeleton, then that skeleton reinterpreted. *(sequential)*
 
+**sludge** — Thick, heavy, ground down. Percussion gives it weight, strings add overtones, vintage smooths the edges. Quantize and high temp make it crunch. *(sequential)*
+
+**glass-teeth** — Descending quantization through three models. Each one crunches what the last one left, creating jagged crystalline staircase artifacts. *(sequential)*
+
+### Destruction
+
 **fever-dream** — Every knob cranked. Three models in sequence with reverse, shuffle, noise, high temp. What comes out is barely audio. *(sequential)*
+
+### Cinematic / Found-Sound
+
+**organ-donor** — 50% original, transplanted with orchestral string DNA from sol_ordinario and sol_full models. *(branch)*
+
+**concrete-music** — Musique concrète. Four models reinterpret input as found-object textures — percussion as tape splices, nasa as field recordings, isis as resonant bodies, darbouka as hand-struck surfaces. *(branch)*
+
+### Nested / Recursive
+*recipes that use other recipes*
+
+**deja-vu** — haunted-dub fed through ghost-in-the-machine. A memory of a memory — the original is two layers of neural network away. *(sequential, nested)*
+
+**muscle-memory** — bone-xray twice in sequence. The first X-ray captures the skeleton, the second X-rays the X-ray. Progressive degradation through the signature recipe. *(sequential, nested)*
 
 ### Running recipes
 

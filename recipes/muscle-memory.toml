@@ -1,0 +1,15 @@
+[recipe]
+name = "muscle-memory"
+mode = "sequential"
+
+# bone-xray twice in sequence — each pass the body remembers less
+# the first X-ray captures the skeleton, the second X-rays the X-ray
+# progressive degradation through the signature recipe
+
+[[steps]]
+effect = "recipe"
+path = "recipes/bone-xray.toml"
+
+[[steps]]
+effect = "recipe"
+path = "recipes/bone-xray.toml"

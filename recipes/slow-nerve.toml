@@ -1,0 +1,28 @@
+[recipe]
+name = "slow-nerve"
+mode = "branch"
+
+# neural network as synthesizer — any input becomes a drone
+# low temperature pulls everything toward the model's average
+# strings and orchestral instruments blur into a warm pad
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 0.3
+dims = "0,1"
+weight = 0.4
+
+[[steps]]
+effect = "rave"
+model = "sol_full"
+temperature = 0.4
+dims = "2,3"
+weight = 0.3
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+temperature = 0.3
+dims = "0,1,2,3"
+weight = 0.3

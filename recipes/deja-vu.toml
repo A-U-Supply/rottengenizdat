@@ -1,0 +1,15 @@
+[recipe]
+name = "deja-vu"
+mode = "sequential"
+
+# a memory of a memory — haunted-dub's ghost fed through
+# ghost-in-the-machine's wall of separation
+# the original is two layers of neural network away
+
+[[steps]]
+effect = "recipe"
+path = "recipes/haunted-dub.toml"
+
+[[steps]]
+effect = "recipe"
+path = "recipes/ghost-in-the-machine.toml"

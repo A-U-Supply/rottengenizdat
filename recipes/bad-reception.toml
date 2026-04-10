@@ -1,0 +1,20 @@
+[recipe]
+name = "bad-reception"
+mode = "sequential"
+
+# a TV losing signal — glitchy dropouts and static bursts
+# shuffle creates the stuttering, noise fills the gaps
+# quantize snaps what's left into harsh digital steps
+
+[[steps]]
+effect = "rave"
+model = "nasa"
+temperature = 1.1
+noise = 0.3
+shuffle_chunks = 6
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+quantize = 0.4
+noise = 0.15

@@ -1,0 +1,19 @@
+[recipe]
+name = "amber"
+mode = "sequential"
+
+# audio preserved in amber — fossilized, warm, ancient
+# very low temperature smooths everything toward the model's average
+# like finding a wax cylinder recording in an attic
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.5
+dims = "0,1,2,3"
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.4
+noise = 0.05

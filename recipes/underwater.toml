@@ -1,0 +1,28 @@
+[recipe]
+name = "underwater"
+mode = "branch"
+
+# hearing music through water — submerged, muffled, distant
+# only the lowest dims (structure/tone) survive
+# low temperature smooths out all the detail
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.4
+dims = "0,1"
+weight = 0.4
+
+[[steps]]
+effect = "rave"
+model = "sol_ordinario"
+temperature = 0.3
+dims = "0,1,2"
+weight = 0.35
+
+[[steps]]
+effect = "rave"
+model = "musicnet"
+temperature = 0.4
+dims = "0,1"
+weight = 0.25

@@ -49,15 +49,19 @@ onto discarded hospital X-ray film.
 Start with a single effect, then graduate to chains and recipes:
 
   rotten rave input.wav -m vintage -o out.wav
-  rotten rave input.wav input2.wav -m nasa -t 1.5 --mode splice -o out.wav
   rotten chain input.wav "rave -m percussion" "rave -m vintage" -o out.wav
   rotten recipe run recipes/fever-dream.toml input.wav -o out.wav
+
+Browse the 41 built-in recipes:
+
+  rotten recipe list                # all recipes, organized by category
+  rotten recipe list ambient        # filter by category
+  rotten recipe list vocal          # filter by category
 
 Pull random samples from Slack #sample-sale:
 
   rotten recipe run recipes/bone-xray.toml --sample-sale-count 3 -o out.wav
   rotten sample-sale refresh
-  rotten config set slack.token xoxb-YOUR-TOKEN
 
 Run any command with -h to see detailed help and examples.
 """
@@ -335,56 +339,29 @@ Manage and run saved effect chains (recipes).
 
 Recipes are TOML files that store a named sequence of effects — either
 sequential (each step feeds the next) or branch (all steps run on the
-original, then mix). rottengenizdat ships with 14 built-in recipes in
-the recipes/ directory, ranging from barely-noticeable to total sonic
-destruction.
+original, then mix). rottengenizdat ships with 41 built-in recipes in
+the recipes/ directory, organized by category.
 
-  ░░░ SUBTLE ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ CHAOTIC ███
-  barely-there                              fever-dream
-  needle-drop                            bitcrushed-god
-  ghost-in-the-machine                    drunk-choir
-  haunted-dub                            time-sick
-  organ-donor                           hall-of-mirrors
-  space-sickness                       parallel-universe
-  nature-documentary                   bone-xray
+BROWSE RECIPES:
 
-Recipes (subtle → chaotic):
+  rotten recipe list                # all 41 recipes, organized by category
+  rotten recipe list ambient        # filter by category
+  rotten recipe list glitch         # filter by category
 
-  barely-there ........ 90% original + 10% vintage whisper on 2 dims.
-                        A/B it to even tell. The gentlest touch.
-  needle-drop ......... Like playing a well-worn record. Warm vintage
-                        model on 2 dims at low temp, mixed 40% wet.
-  ghost-in-the-machine  Heard through a wall. Two models in sequence,
-                        each touching only a few dims. Timbre goes wrong
-                        but structure stays.
-  haunted-dub ......... 70% your track + 30% vintage ghost with noise.
-                        Like hearing the reverb tail of a song that was
-                        never played.
-  organ-donor ......... 50% original, transplanted with orchestral string
-                        DNA from sol_ordinario and sol_full models.
-  space-sickness ...... 60% original + reversed NASA ghosts + faint
-                        quantized percussion shadow.
-  nature-documentary .. NASA + orchestral strings = alien wildlife
-                        soundtrack. Three models in parallel.
-  bone-xray ........... The namesake. Three models (percussion, vintage,
-                        musicnet) fighting over your track — like a
-                        bootleg pressed onto three X-ray films at once.
-  parallel-universe ... Four models, each only touching 4 latent dims.
-                        Four alternate realities blended together.
-  hall-of-mirrors ..... Same model (vintage) three times in sequence,
-                        temperature creeping up. A photocopy of a
-                        photocopy of a photocopy.
-  drunk-choir ......... Two VCTK voice models + isis, each with noise.
-                        Your track sung back by confused neural networks.
-  time-sick ........... Temporal nausea: reverse the latent, shuffle it
-                        into chunks, quantize. Structure is there but the
-                        timeline is having a seizure.
-  bitcrushed-god ...... Extreme quantization through two models. Your
-                        track reduced to its coarsest neural skeleton,
-                        then that skeleton reinterpreted.
-  fever-dream ......... Every knob cranked. Three models in sequence with
-                        reverse, shuffle, noise, high temp. What comes
-                        out is barely audio.
+CATEGORIES:
+
+  lo-fi / analog ......... warm, degraded, nostalgic (6 recipes)
+  ambient / drone ........ pads, textures, drones (3 recipes)
+  spatial / uncanny ....... ghostly, liminal, eerie (3 recipes)
+  rhythmic / percussive .. beats, pulse, world (2 recipes)
+  vocal / choir .......... speech-shaped, choral, eerie (6 recipes)
+  space / cosmic ......... alien, transmissions, vast (4 recipes)
+  glitch / temporal ...... stutters, fragmentation, time (4 recipes)
+  multi-model blends ..... many models at once (4 recipes)
+  harsh / industrial ..... crushing, grinding (4 recipes)
+  destruction ............ total sonic annihilation (1 recipe)
+  cinematic / found-sound  soundtrack, musique concrete (2 recipes)
+  nested / recursive ..... recipes that use other recipes (2 recipes)
 
 RUNNING RECIPES:
 
@@ -557,6 +534,130 @@ def recipe_run(
         result = _run_pipeline(audio)
         save_audio(result, output)
         console.print(f"[green]Saved:[/green] {output}")
+
+
+@recipe_app.command(name="list")
+def recipe_list(
+    category: Annotated[Optional[str], typer.Argument(help="Filter by category (e.g. ambient, glitch, vocal)")] = None,
+) -> None:
+    """List all built-in recipes, organized by category.
+
+    Shows every recipe in the recipes/ directory with its description,
+    mode, and step count. Optionally filter by category name.
+
+    Examples:
+
+      rotten recipe list                # all recipes
+      rotten recipe list ambient        # just ambient recipes
+      rotten recipe list glitch         # just glitch recipes
+    """
+    import tomllib
+
+    # Recipe catalog with categories and one-line descriptions
+    _CATALOG: dict[str, list[tuple[str, str]]] = {
+        "lo-fi / analog": [
+            ("barely-there", "90% original + 10% vintage whisper. The gentlest touch."),
+            ("needle-drop", "Like playing a well-worn record. Warm vintage at low temp."),
+            ("haunted-dub", "Your track + a vintage ghost with noise. Reverb tail of an unplayed song."),
+            ("tape-hiss", "Cassette dubbed too many times. Three vintage passes, rising noise."),
+            ("amber", "Preserved in amber. Very low temp smoothing — a century-old recording."),
+            ("ribs", "The roentgenizdat effect. Noisy, degraded, pressed onto an X-ray."),
+        ],
+        "ambient / drone": [
+            ("slow-nerve", "Any input becomes a drone. Low temp strings + orchestral = warm pad."),
+            ("prayer-wheel", "Four models at identical low settings. Meditative shimmer."),
+            ("underwater", "Submerged. Low dims, low temp. Hearing music through water."),
+        ],
+        "spatial / uncanny": [
+            ("ghost-in-the-machine", "Heard through a wall. Timbre goes wrong, structure stays."),
+            ("phantom-limb", "The original is gone but you feel it. 2% dry whisper under heavy RAVE."),
+            ("sleep-paralysis", "Reversed voices pin you down. Original at a whisper."),
+        ],
+        "rhythmic / percussive": [
+            ("darbouka-dream", "Middle Eastern hand-drum color + isis resonance."),
+            ("skull-radio", "Bone conduction. Percussive skeleton + vintage warmth + faint voice."),
+        ],
+        "vocal / choir": [
+            ("drunk-choir", "Two VCTK voices + isis. Your track sung back by confused networks."),
+            ("choir-practice", "Five VCTK voices at staggered temps. Dense and warm."),
+            ("congregation", "Seven voices from four models. A wall of neural singers."),
+            ("speaking-in-tongues", "Drunk-choir at blackout. Six voices, high temp, shuffle, reverse."),
+            ("choir-of-ghosts", "Three drunk-choir runs layered. Voices built on voices."),
+            ("motor-mouth", "Three sequential VCTK passes. Everything becomes speech."),
+        ],
+        "space / cosmic": [
+            ("space-sickness", "60% original + reversed NASA ghosts + faint percussion shadow."),
+            ("nature-documentary", "NASA + orchestral strings = alien wildlife soundtrack."),
+            ("event-horizon", "Sucked into a black hole. Shrinking dims, rising temp."),
+            ("shortwave", "Numbers station vibes. Quantized NASA + ghostly VCTK speech."),
+        ],
+        "glitch / temporal": [
+            ("time-sick", "Temporal nausea. Reverse, shuffle, quantize. Timeline having a seizure."),
+            ("granular", "Tiny shuffle chunks = granular synthesis. Audio as micro-particles."),
+            ("bad-reception", "TV losing signal. Shuffle + noise + quantize = glitchy dropouts."),
+            ("seizure-ward", "Reverse, shuffle, reverse again. Timeline folded back on itself."),
+        ],
+        "multi-model blends": [
+            ("bone-xray", "Three models fighting over your track. The namesake."),
+            ("parallel-universe", "Four models, each touching 4 dims. Four alternate realities."),
+            ("swarm", "Seven models at equal weight. A consensus hallucination."),
+            ("dimension-skip", "Eight models, 2 dims each. Eight slivers of reality superimposed."),
+        ],
+        "harsh / industrial": [
+            ("hall-of-mirrors", "Same model three times, temp rising. Photocopy of a photocopy."),
+            ("bitcrushed-god", "Extreme quantization through two models. Coarsest neural skeleton."),
+            ("sludge", "Thick, heavy, ground down. Three models with quantize and high temp."),
+            ("glass-teeth", "Descending quantization through three models. Crystalline shards."),
+        ],
+        "destruction": [
+            ("fever-dream", "Every knob cranked. Three models, reverse, shuffle, noise. Barely audio."),
+        ],
+        "cinematic / found-sound": [
+            ("organ-donor", "50% original + orchestral string DNA. Transplanted."),
+            ("concrete-music", "Musique concrete. Four models as found-object textures."),
+        ],
+        "nested / recursive": [
+            ("deja-vu", "haunted-dub into ghost-in-the-machine. A memory of a memory."),
+            ("muscle-memory", "bone-xray twice. The body remembers less each pass."),
+        ],
+    }
+
+    recipes_dir = Path(__file__).resolve().parent.parent.parent / "recipes"
+
+    if category:
+        cat_lower = category.lower()
+        matches = {k: v for k, v in _CATALOG.items() if cat_lower in k.lower()}
+        if not matches:
+            console.print(f"[red]No category matching '{category}'.[/red]")
+            console.print("[dim]Categories:[/dim] " + ", ".join(_CATALOG.keys()))
+            raise typer.Exit(1)
+        catalog = matches
+    else:
+        catalog = _CATALOG
+
+    total = 0
+    for cat_name, recipes in catalog.items():
+        console.print(f"\n[bold]{cat_name.upper()}[/bold]")
+        for recipe_name, desc in recipes:
+            toml_path = recipes_dir / f"{recipe_name}.toml"
+            # Try to read mode and step count from the file
+            mode_str = ""
+            if toml_path.exists():
+                try:
+                    with open(toml_path, "rb") as f:
+                        data = tomllib.load(f)
+                    meta = data.get("recipe", {})
+                    m = meta.get("mode", "sequential")
+                    steps = data.get("steps", [])
+                    mode_str = f" [dim]({m}, {len(steps)} steps)[/dim]"
+                except Exception:
+                    pass
+            console.print(f"  [cyan]{recipe_name:24s}[/cyan] {desc}{mode_str}")
+            total += 1
+
+    console.print(f"\n[dim]{total} recipe(s)[/dim]")
+    if not category:
+        console.print("[dim]Filter by category:[/dim] rotten recipe list <category>")
 
 
 @recipe_app.command(name="save")
