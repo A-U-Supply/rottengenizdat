@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import random
 import re
 import shutil
@@ -11,6 +12,8 @@ from pathlib import Path
 from typing import Optional
 
 from rottengenizdat.config import resolve_slack_channel, resolve_slack_token
+
+logger = logging.getLogger(__name__)
 
 CACHE_DIR = Path.home() / ".cache" / "rottengenizdat"
 INDEX_FILENAME = "index.json"
@@ -161,6 +164,37 @@ def sync_index(
     return combined
 
 
+def _download_slack_file(url: str, token: str) -> bytes:
+    """Download a file from Slack, preserving auth through redirects.
+
+    Follows up to 5 redirects with the Authorization header on every
+    request (requests strips it on cross-host redirect by default).
+    Matches the battle-tested pattern from sparagmos.
+    """
+    import requests
+
+    headers = {"Authorization": f"Bearer {token}"}
+    max_redirects = 5
+    for _ in range(max_redirects):
+        resp = requests.get(
+            url, headers=headers, timeout=30, allow_redirects=False,
+        )
+        if resp.status_code in (301, 302, 303, 307, 308):
+            url = resp.headers["Location"]
+            continue
+        resp.raise_for_status()
+
+        content_type = resp.headers.get("Content-Type", "")
+        if content_type.startswith(("text/html", "application/json")):
+            raise RuntimeError(
+                f"Expected media, got {content_type}. "
+                "Slack may have returned a login/error page."
+            )
+        return resp.content
+
+    raise RuntimeError(f"Too many redirects downloading {url}")
+
+
 def download_sample(
     entry: IndexEntry,
     cache_dir: Path = CACHE_DIR,
@@ -179,38 +213,33 @@ def download_sample(
     if entry.type == "attachment":
         kwargs = {"config_dir": config_dir} if config_dir else {}
         token = resolve_slack_token(**kwargs)
-        import requests
 
-        # Follow redirects manually, keeping auth on every hop.
-        # requests strips Authorization on redirect to a different host,
-        # but Slack's CDN still needs it.
-        url = entry.slack_url
-        headers = {"Authorization": f"Bearer {token}"}
-        max_redirects = 5
-        for _ in range(max_redirects):
-            resp = requests.get(
-                url, headers=headers, timeout=30, allow_redirects=False,
+        # Get a fresh download URL via files.info — cached URLs can go
+        # stale when files are re-shared or permissions change.
+        from slack_sdk import WebClient
+
+        client = WebClient(token=token)
+        try:
+            info = client.files_info(file=entry.id)
+            file_data = info.get("file", {})
+            fresh_url = (
+                file_data.get("url_private_download")
+                or file_data.get("url_private")
+                or entry.slack_url
             )
-            if resp.status_code in (301, 302, 303, 307, 308):
-                url = resp.headers["Location"]
-                continue
-            break
-        else:
+        except Exception:
+            logger.warning(
+                "files.info failed for %s, using cached URL", entry.id
+            )
+            fresh_url = entry.slack_url
+
+        if not fresh_url:
             raise RuntimeError(
-                f"Too many redirects downloading {entry.filename or entry.id}"
-            )
-        resp.raise_for_status()
-
-        # Verify we got actual media, not an HTML error page
-        content_type = resp.headers.get("Content-Type", "")
-        if content_type.startswith(("text/html", "application/json")):
-            raise RuntimeError(
-                f"Slack returned {content_type} instead of media for "
-                f"{entry.filename or entry.id}. The file may have expired "
-                f"or the bot token may lack file access."
+                f"No download URL for {entry.filename or entry.id}"
             )
 
-        local_path.write_bytes(resp.content)
+        data = _download_slack_file(fresh_url, token)
+        local_path.write_bytes(data)
     elif entry.type == "link":
         if not shutil.which("yt-dlp"):
             raise RuntimeError(

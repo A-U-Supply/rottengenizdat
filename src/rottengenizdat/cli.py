@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import random
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -131,6 +132,57 @@ def register_plugins() -> None:
 
 
 register_plugins()
+
+
+def _fetch_samples(
+    count: int,
+    index: list[IndexEntry],
+) -> tuple[list[AudioBuffer], list[str], list[IndexEntry]]:
+    """Fetch samples from #sample-sale with retry on failed downloads.
+
+    If a sample fails to download or load, tries a replacement from
+    the remaining index (same pattern as sparagmos's selector_fetcher).
+
+    Returns (buffers, names, successful_picks).
+    """
+    import rottengenizdat.sample_sale as _ss
+
+    buffers: list[AudioBuffer] = []
+    names: list[str] = []
+    picks: list[IndexEntry] = []
+    tried_ids: set[str] = set()
+    remaining = list(index)
+
+    while len(buffers) < count and remaining:
+        needed = count - len(buffers)
+        candidates = [e for e in remaining if e.id not in tried_ids]
+        if not candidates:
+            break
+        batch = random.sample(candidates, min(needed, len(candidates)))
+
+        for entry in batch:
+            tried_ids.add(entry.id)
+            label = entry.filename or entry.url or entry.id
+            console.print(f"  [dim]Selected:[/dim] {label}")
+            try:
+                path = _ss.download_sample(entry)
+                buf = load_audio(path)
+                buffers.append(buf)
+                names.append(entry.filename or entry.id)
+                picks.append(entry)
+            except Exception as e:
+                console.print(f"  [yellow]Skipped (bad file):[/yellow] {label}: {e}")
+                # Clean up any partial download
+                cached = _ss.CACHE_DIR / entry.cached_path
+                if cached.exists():
+                    cached.unlink()
+
+    if len(buffers) < count:
+        console.print(
+            f"[yellow]Warning: only got {len(buffers)}/{count} usable samples[/yellow]"
+        )
+
+    return buffers, names, picks
 
 
 def _write_sources_json(
@@ -322,12 +374,9 @@ def chain_command(ctx: typer.Context) -> None:
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        ss_picks = _ss.pick_random_samples(index, ss_count)
-        for entry in ss_picks:
-            console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
-            path = _ss.download_sample(entry)
-            all_buffers.append(load_audio(path))
-            all_names.append(entry.filename or entry.id)
+        ss_bufs, ss_names, ss_picks = _fetch_samples(ss_count, index)
+        all_buffers.extend(ss_bufs)
+        all_names.extend(ss_names)
 
     if not all_buffers:
         console.print("[red]No input files provided.[/red]")
@@ -512,12 +561,9 @@ def recipe_run(
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        ss_picks = _ss.pick_random_samples(index, ss_count)
-        for entry in ss_picks:
-            console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
-            path = _ss.download_sample(entry)
-            all_buffers.append(load_audio(path))
-            all_names.append(entry.filename or entry.id)
+        ss_bufs, ss_names, ss_picks = _fetch_samples(ss_count, index)
+        all_buffers.extend(ss_bufs)
+        all_names.extend(ss_names)
 
     if not all_buffers:
         console.print("[red]No input files provided. Pass audio files or use --sample-sale.[/red]")
