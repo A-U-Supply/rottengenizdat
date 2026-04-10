@@ -1,7 +1,7 @@
 import type { Env } from "./types";
-import { dispatchWorkflow, fetchWorkflowRuns, fetchActionsUsage } from "./github";
+import { dispatchWorkflow, dispatchChainWorkflow, fetchWorkflowRuns, fetchActionsUsage } from "./github";
 import { buildUsageContextShort } from "./blocks";
-import { buildHelpView, buildStatusView } from "./modal";
+import { buildHelpView, buildStatusView, buildCustomModalView } from "./modal";
 import { getRecipe } from "./recipes";
 
 // ---------------------------------------------------------------------------
@@ -126,6 +126,14 @@ export async function handleInteraction(
             }
             break;
           }
+          case "modal_open_custom": {
+            if (payload.trigger_id) {
+              const channelId = payload.view?.private_metadata ?? "";
+              const view = buildCustomModalView(channelId);
+              await openView(env, payload.trigger_id, view);
+            }
+            break;
+          }
           case "modal_open_status": {
             if (payload.trigger_id) {
               const [runs, usage] = await Promise.all([
@@ -216,6 +224,120 @@ export async function handleInteraction(
         if (ctx) ctx.waitUntil(work);
         else work.catch(console.error);
       }
+      if (payload.view?.callback_id === "rottengenizdat_custom") {
+        const vals = payload.view.state.values;
+
+        // Extract chain mode
+        const chainMode =
+          vals.chain_mode_block?.chain_mode_select?.selected_option?.value ?? "sequential";
+
+        // Extract steps
+        const stepStrings: string[] = [];
+        for (const stepNum of [1, 2, 3]) {
+          const p = `step${stepNum}`;
+          const model =
+            vals[`${p}_model_block`]?.[`${p}_model`]?.selected_option?.value ?? "none";
+          if (model === "none") continue;
+
+          const parts: string[] = [`-m ${model}`];
+
+          const temp = vals[`${p}_temp_block`]?.[`${p}_temp`]?.selected_option?.value;
+          if (temp && temp !== "1.0") parts.push(`-t ${temp}`);
+
+          const noise = vals[`${p}_noise_block`]?.[`${p}_noise`]?.selected_option?.value;
+          if (noise && noise !== "0.0") parts.push(`-n ${noise}`);
+
+          const mix = vals[`${p}_mix_block`]?.[`${p}_mix`]?.selected_option?.value;
+          if (mix && mix !== "1.0") parts.push(`-w ${mix}`);
+
+          const dims: string[] = (
+            vals[`${p}_dims_block`]?.[`${p}_dims`]?.selected_options ?? []
+          ).map((o: any) => o.value);
+          if (dims.length > 0 && dims.length < 16) parts.push(`-d ${dims.join(",")}`);
+
+          const reversed: any[] =
+            vals[`${p}_reverse_block`]?.[`${p}_reverse`]?.selected_options ?? [];
+          if (reversed.length > 0) parts.push("-r");
+
+          const shuffle = vals[`${p}_shuffle_block`]?.[`${p}_shuffle`]?.selected_option?.value;
+          if (shuffle) parts.push(`--shuffle ${shuffle}`);
+
+          const quantize = vals[`${p}_quantize_block`]?.[`${p}_quantize`]?.selected_option?.value;
+          if (quantize) parts.push(`-q ${quantize}`);
+
+          stepStrings.push(`rave ${parts.join(" ")}`);
+        }
+
+        if (stepStrings.length === 0) {
+          return new Response(
+            JSON.stringify({
+              response_action: "errors",
+              errors: { step1_model_block: "At least one step is required" },
+            }),
+            { headers: { "Content-Type": "application/json" } },
+          );
+        }
+
+        const sampleCount = parseInt(
+          vals.custom_sample_count_block?.custom_sample_count_select?.selected_option?.value ?? "3",
+          10,
+        );
+        const inputMode =
+          vals.custom_input_mode_block?.custom_input_mode_select?.selected_option?.value ?? "splice";
+        const rawUrls: string = vals.custom_urls_block?.custom_audio_urls?.value ?? "";
+        const urls = rawUrls
+          .split(/[\s,]+/)
+          .map((u: string) => u.trim())
+          .filter((u: string) => /^https?:\/\//i.test(u));
+
+        const channelId = payload.view.private_metadata;
+        const userId = payload.user.id;
+        const stepsLabel = stepStrings.length === 1
+          ? stepStrings[0]
+          : `${stepStrings.length}-step ${chainMode} chain`;
+
+        const work = (async () => {
+          let ok = false;
+          let dispatchError = "";
+          let usage: Awaited<ReturnType<typeof fetchActionsUsage>> = null;
+
+          try {
+            const results = await Promise.allSettled([
+              dispatchChainWorkflow(env, stepStrings, chainMode, sampleCount, inputMode, urls),
+              fetchActionsUsage(env),
+            ]);
+            ok = results[0].status === "fulfilled" && results[0].value === true;
+            if (results[0].status === "rejected") {
+              dispatchError = String(results[0].reason);
+            }
+            if (results[1].status === "fulfilled") {
+              usage = results[1].value;
+            }
+          } catch (err) {
+            dispatchError = String(err);
+          }
+
+          const postTo = channelId || undefined;
+          if (postTo) {
+            const msg = ok
+              ? `:wrench: Firing up custom chain: *${stepsLabel}* with ${sampleCount} sample(s) (${inputMode})...`
+              : `:warning: Failed to dispatch workflow.${dispatchError ? ` Error: ${dispatchError}` : ""}`;
+            const blocks = confirmationBlocks(msg);
+            if (usage) blocks.push(buildUsageContextShort(usage));
+            await fetch("https://slack.com/api/chat.postEphemeral", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${env.SLACK_BOT_TOKEN}`,
+              },
+              body: JSON.stringify({ channel: postTo, user: userId, text: msg, blocks }),
+            });
+          }
+        })();
+        if (ctx) ctx.waitUntil(work);
+        else work.catch(console.error);
+      }
+
       return new Response(JSON.stringify({ response_action: "clear" }), {
         headers: { "Content-Type": "application/json" },
       });

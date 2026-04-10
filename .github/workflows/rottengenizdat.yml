@@ -3,16 +3,28 @@ name: rottengenizdat
 on:
   workflow_dispatch:
     inputs:
+      run_mode:
+        description: 'Run mode: recipe (default) or chain (custom)'
+        type: string
+        default: 'recipe'
       recipe:
-        description: 'Recipe name (leave empty for random)'
+        description: 'Recipe name (leave empty for random, recipe mode only)'
         type: string
         default: ''
+      chain_steps:
+        description: 'JSON array of step strings (chain mode only)'
+        type: string
+        default: '[]'
+      chain_mode:
+        description: 'Chain mode: sequential or branch (chain mode only)'
+        type: string
+        default: 'sequential'
       sample_sale_count:
         description: 'Number of samples to pull from #sample-sale'
         type: string
         default: '3'
       input_mode:
-        description: 'Input combination mode: splice, concat, independent'
+        description: 'Input combination mode: splice, concat, blend, independent'
         type: string
         default: 'splice'
       audio_urls:
@@ -65,6 +77,7 @@ jobs:
 
       - name: Pick recipe
         id: recipe
+        if: inputs.run_mode != 'chain'
         run: |
           RECIPE="${{ inputs.recipe }}"
           if [ -z "$RECIPE" ]; then
@@ -80,7 +93,17 @@ jobs:
           rotten config set slack.token "$SLACK_BOT_TOKEN"
           rotten config set slack.channel C07QNGDTBR6
 
-      - name: Run rottengenizdat
+      - name: Build run label
+        id: label
+        run: |
+          if [ "${{ inputs.run_mode }}" = "chain" ]; then
+            echo "name=custom-chain" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${{ steps.recipe.outputs.name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run rottengenizdat (recipe)
+        if: inputs.run_mode != 'chain'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
@@ -93,18 +116,49 @@ jobs:
           echo "Running: $CMD"
           $CMD
 
+      - name: Run rottengenizdat (chain)
+        if: inputs.run_mode == 'chain'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          # Parse step strings from JSON array
+          STEPS=$(echo '${{ inputs.chain_steps }}' | python3 -c "
+          import sys, json
+          steps = json.load(sys.stdin)
+          for s in steps:
+              print(s)
+          ")
+
+          CMD="rotten chain"
+          CMD="$CMD --sample-sale-count ${{ inputs.sample_sale_count }}"
+          if [ "${{ inputs.chain_mode }}" = "branch" ]; then
+            CMD="$CMD --branch"
+          fi
+          if [ "${{ inputs.input_mode }}" != "splice" ]; then
+            CMD="$CMD --mode ${{ inputs.input_mode }}"
+          fi
+          CMD="$CMD -o output.wav"
+
+          # Append each step as a quoted argument
+          while IFS= read -r step; do
+            CMD="$CMD \"$step\""
+          done <<< "$STEPS"
+
+          echo "Running: $CMD"
+          eval $CMD
+
       - name: Post result to Slack
         if: success()
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
-          RECIPE="${{ steps.recipe.outputs.name }}"
+          LABEL="${{ steps.label.outputs.name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           # Upload the audio file
           UPLOAD_RESPONSE=$(curl -s -X POST https://slack.com/api/files.getUploadURLExternal \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-            -d "filename=rottengenizdat-${RECIPE}.wav" \
+            -d "filename=rottengenizdat-${LABEL}.wav" \
             -d "length=$(stat -c%s output.wav)")
 
           UPLOAD_URL=$(echo "$UPLOAD_RESPONSE" | python3 -c "import sys, json; print(json.load(sys.stdin)['upload_url'])")
@@ -116,16 +170,16 @@ jobs:
           curl -s -X POST https://slack.com/api/files.completeUploadExternal \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${RECIPE}\"}], \"channel_id\": \"C0ARZFZ5KLJ\", \"initial_comment\": \":radio: *rottengenizdat: ${RECIPE}* \\n<${RUN_URL}|View logs>\"}"
+            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${LABEL}\"}], \"channel_id\": \"C0ARZFZ5KLJ\", \"initial_comment\": \":radio: *rottengenizdat: ${LABEL}* \\n<${RUN_URL}|View logs>\"}"
 
       - name: Notify Slack on failure
         if: failure()
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
         run: |
-          RECIPE="${{ steps.recipe.outputs.name }}"
+          LABEL="${{ steps.label.outputs.name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"channel\": \"C0ARZFZ5KLJ\", \"text\": \":x: rottengenizdat run failed (recipe: ${RECIPE}). <${RUN_URL}|View logs>\"}"
+            -d "{\"channel\": \"C0ARZFZ5KLJ\", \"text\": \":x: rottengenizdat run failed (${LABEL}). <${RUN_URL}|View logs>\"}"
