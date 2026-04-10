@@ -168,8 +168,11 @@ def download_sample(
 ) -> Path:
     """Download a sample if not already cached. Returns the local file path."""
     local_path = cache_dir / entry.cached_path
-    if local_path.exists():
+    if local_path.exists() and local_path.stat().st_size > 1024:
         return local_path
+    # Remove any cached corrupt/truncated files
+    if local_path.exists():
+        local_path.unlink()
 
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -178,11 +181,27 @@ def download_sample(
         token = resolve_slack_token(**kwargs)
         import requests
 
+        # Slack redirects file downloads — requests strips the
+        # Authorization header on redirect, so we follow manually.
         resp = requests.get(
             entry.slack_url,
             headers={"Authorization": f"Bearer {token}"},
+            allow_redirects=False,
         )
+        if resp.status_code in (301, 302, 303, 307, 308):
+            redirect_url = resp.headers["Location"]
+            resp = requests.get(redirect_url)
         resp.raise_for_status()
+
+        # Verify we got actual media, not an HTML error page
+        content_type = resp.headers.get("Content-Type", "")
+        if content_type.startswith(("text/html", "application/json")):
+            raise RuntimeError(
+                f"Slack returned {content_type} instead of media for "
+                f"{entry.filename or entry.id}. The file may have expired "
+                f"or the bot token may lack file access."
+            )
+
         local_path.write_bytes(resp.content)
     elif entry.type == "link":
         if not shutil.which("yt-dlp"):
