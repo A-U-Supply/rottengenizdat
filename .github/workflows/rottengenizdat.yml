@@ -5,15 +5,19 @@ on:
     inputs:
       recipe:
         description: 'Recipe name (leave empty for random)'
+        type: string
         default: ''
       sample_sale_count:
         description: 'Number of samples to pull from #sample-sale'
+        type: string
         default: '3'
       input_mode:
         description: 'Input combination mode: splice, concat, independent'
+        type: string
         default: 'splice'
       audio_urls:
         description: 'Comma-separated audio/video URLs (optional)'
+        type: string
         default: ''
 
 jobs:

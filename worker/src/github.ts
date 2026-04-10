@@ -16,13 +16,11 @@ export async function dispatchWorkflow(
   audioUrls: string[] = [],
 ): Promise<boolean> {
   const inputs: Record<string, string> = {
-    recipe,
+    recipe: recipe || "",
     sample_sale_count: String(sampleSaleCount),
     input_mode: inputMode,
+    audio_urls: audioUrls.length > 0 ? audioUrls.join(",") : "",
   };
-  if (audioUrls.length > 0) {
-    inputs.audio_urls = audioUrls.join(",");
-  }
 
   const response = await fetch(
     "https://api.github.com/repos/A-U-Supply/rottengenizdat/actions/workflows/rottengenizdat.yml/dispatches",
