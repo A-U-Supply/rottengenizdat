@@ -9,7 +9,7 @@ import { verifySlackSignature, parseSlashCommand, slackResponse } from "./slack"
 import { dispatchWorkflow, fetchWorkflowRuns, fetchActionsUsage } from "./github";
 import { handleInteraction } from "./interactions";
 import { buildStatusBlocks, buildUsageContextShort } from "./blocks";
-import { buildModalView, buildHelpView } from "./modal";
+import { buildModalView, buildHelpView, buildCustomModalView } from "./modal";
 
 // Re-export for tests
 export type { Env, ParsedCommand } from "./types";
@@ -25,6 +25,7 @@ function buildHelpText(): string {
     "",
     "*Usage:*",
     "  `/rottengenizdat` -- open the recipe picker modal",
+    "  `/rottengenizdat custom` -- open the custom chain builder",
     "  `/rottengenizdat <recipe>` -- run a specific recipe with 3 random samples",
     "  `/rottengenizdat list` -- show all available recipes",
     "  `/rottengenizdat status` -- check recent run status",
@@ -86,6 +87,19 @@ export async function handleSlashCommand(body: string, env: Env, ctx: ExecutionC
       }),
       { headers: { "Content-Type": "application/json" } },
     );
+  }
+
+  // Custom modal
+  if (command === "custom") {
+    const triggerId = params.get("trigger_id");
+    const channelId = params.get("channel_id") ?? "";
+    if (triggerId) {
+      const error = await openViewModal(env, triggerId, buildCustomModalView(channelId));
+      if (error) {
+        return slackResponse(`:x: Failed to open custom modal: ${error}`);
+      }
+    }
+    return new Response("", { status: 200 });
   }
 
   // No command -> open the modal

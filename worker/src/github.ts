@@ -43,6 +43,47 @@ export async function dispatchWorkflow(
   return response.status === 204;
 }
 
+/**
+ * Dispatch a custom chain workflow (no recipe, raw step strings).
+ */
+export async function dispatchChainWorkflow(
+  env: Env,
+  chainSteps: string[],
+  chainMode: string = "sequential",
+  sampleSaleCount: number = 3,
+  inputMode: string = "splice",
+  audioUrls: string[] = [],
+): Promise<boolean> {
+  const inputs: Record<string, string> = {
+    run_mode: "chain",
+    chain_steps: JSON.stringify(chainSteps),
+    chain_mode: chainMode,
+    sample_sale_count: String(sampleSaleCount),
+    input_mode: inputMode,
+    audio_urls: audioUrls.length > 0 ? audioUrls.join(",") : "",
+  };
+
+  const response = await fetch(
+    "https://api.github.com/repos/A-U-Supply/rottengenizdat/actions/workflows/rottengenizdat.yml/dispatches",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        Accept: "application/vnd.github+json",
+        "User-Agent": "rottengenizdat-slash-command/1.0",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({ ref: "main", inputs }),
+    },
+  );
+
+  if (response.status !== 204) {
+    const text = await response.text();
+    console.error(`GitHub chain dispatch failed: ${response.status} ${text}`);
+  }
+  return response.status === 204;
+}
+
 // ---------------------------------------------------------------------------
 // Status
 // ---------------------------------------------------------------------------
