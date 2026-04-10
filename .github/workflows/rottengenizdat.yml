@@ -107,23 +107,26 @@ jobs:
         if: inputs.run_mode != 'chain'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          AUDIO_URLS: ${{ inputs.audio_urls }}
         run: |
-          CMD="rotten recipe run recipes/${{ steps.recipe.outputs.name }}.toml"
-          CMD="$CMD --sample-sale-count ${{ inputs.sample_sale_count }}"
-          if [ -n "${{ inputs.audio_urls }}" ]; then
-            CMD="$CMD --audio-urls '${{ inputs.audio_urls }}'"
+          set -f  # disable globbing so ? in URLs isn't expanded
+          ARGS="rotten recipe run recipes/${{ steps.recipe.outputs.name }}.toml"
+          ARGS="$ARGS --sample-sale-count ${{ inputs.sample_sale_count }}"
+          if [ -n "$AUDIO_URLS" ]; then
+            ARGS="$ARGS --audio-urls $AUDIO_URLS"
           fi
           if [ "${{ inputs.input_mode }}" != "splice" ]; then
-            CMD="$CMD --mode ${{ inputs.input_mode }}"
+            ARGS="$ARGS --mode ${{ inputs.input_mode }}"
           fi
-          CMD="$CMD -o output.wav"
-          echo "Running: $CMD"
-          $CMD
+          ARGS="$ARGS -o output.wav"
+          echo "Running: $ARGS"
+          $ARGS
 
       - name: Run rottengenizdat (chain)
         if: inputs.run_mode == 'chain'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          AUDIO_URLS: ${{ inputs.audio_urls }}
         run: |
           # Parse step strings from JSON array
           STEPS=$(echo '${{ inputs.chain_steps }}' | python3 -c "
@@ -135,8 +138,8 @@ jobs:
 
           CMD="rotten chain"
           CMD="$CMD --sample-sale-count ${{ inputs.sample_sale_count }}"
-          if [ -n "${{ inputs.audio_urls }}" ]; then
-            CMD="$CMD --audio-urls '${{ inputs.audio_urls }}'"
+          if [ -n "$AUDIO_URLS" ]; then
+            CMD="$CMD --audio-urls '$AUDIO_URLS'"
           fi
           if [ "${{ inputs.chain_mode }}" = "branch" ]; then
             CMD="$CMD --branch"
