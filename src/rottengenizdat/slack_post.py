@@ -56,25 +56,40 @@ def format_thread_reply(
 ) -> str:
     """Format the thread reply with source attribution and permalink links.
 
+    Handles two source types:
+    - #sample-sale sources: show display_name, date, permalink
+    - User-provided URLs: show the URL directly as a clickable link
+
     Args:
         sources: List of source dicts with 'display_name', 'date', and
-            optional 'permalink' keys.
+            optional 'permalink' and 'url' keys.
         channel_name: Source channel name for attribution.
 
     Returns:
         Formatted string for the thread reply text.
     """
-    source_label = "source" if len(sources) == 1 else "sources"
-    attributions = ", ".join(
-        f"{s['display_name']} ({s.get('date', 'unknown')})" for s in sources
-    )
-    lines = [f"{source_label}: {attributions} in #{channel_name}"]
+    channel_sources = [s for s in sources if not s.get("url")]
+    url_sources = [s for s in sources if s.get("url")]
 
-    permalinks = [s.get("permalink", "") for s in sources if s.get("permalink")]
-    if permalinks:
-        link_label = "original" if len(permalinks) == 1 else "originals"
-        links = " \u00b7 ".join(f"<{url}|view>" for url in permalinks)
-        lines.append(f"{link_label}: {links}")
+    lines: list[str] = []
+
+    if channel_sources:
+        source_label = "source" if len(channel_sources) == 1 else "sources"
+        attributions = ", ".join(
+            f"{s['display_name']} ({s.get('date', 'unknown')})" for s in channel_sources
+        )
+        lines.append(f"{source_label}: {attributions} in #{channel_name}")
+
+        permalinks = [s.get("permalink", "") for s in channel_sources if s.get("permalink")]
+        if permalinks:
+            link_label = "original" if len(permalinks) == 1 else "originals"
+            links = " \u00b7 ".join(f"<{url}|view>" for url in permalinks)
+            lines.append(f"{link_label}: {links}")
+
+    if url_sources:
+        url_label = "input url" if len(url_sources) == 1 else "input urls"
+        url_links = " \u00b7 ".join(f"<{s['url']}|link>" for s in url_sources)
+        lines.append(f"{url_label}: {url_links}")
 
     return "\n".join(lines)
 
@@ -229,6 +244,7 @@ def post_result(
                     "display_name": display_name,
                     "date": _ts_to_date(src.get("message_ts", "")),
                     "permalink": permalink,
+                    "url": src.get("url", ""),
                 }
             )
 
