@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated, Optional
 
@@ -17,6 +18,7 @@ from rottengenizdat.config import (
 )
 from rottengenizdat.sample_sale import (
     CACHE_DIR,
+    IndexEntry,
     load_index,
     sync_index,
     clear_cache,
@@ -129,6 +131,31 @@ def register_plugins() -> None:
 
 
 register_plugins()
+
+
+def _write_sources_json(
+    picks: list[IndexEntry], output_path: Path
+) -> Path | None:
+    """Write source metadata for selected samples alongside the output file.
+
+    Returns the path to the written file, or None if no picks.
+    """
+    if not picks:
+        return None
+    sources_path = output_path.parent / "sources.json"
+    sources = [
+        {
+            "message_ts": entry.message_ts,
+            "user": entry.user,
+            "filename": entry.filename,
+            "url": entry.url,
+            "type": entry.type,
+            "id": entry.id,
+        }
+        for entry in picks
+    ]
+    sources_path.write_text(json.dumps(sources, indent=2))
+    return sources_path
 
 
 # ---------------------------------------------------------------------------
@@ -278,6 +305,7 @@ def chain_command(ctx: typer.Context) -> None:
 
     all_buffers: list[AudioBuffer] = []
     all_names: list[str] = []
+    ss_picks: list[IndexEntry] = []
 
     for f in input_files:
         if not f.exists():
@@ -294,8 +322,8 @@ def chain_command(ctx: typer.Context) -> None:
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        picks = _ss.pick_random_samples(index, ss_count)
-        for entry in picks:
+        ss_picks = _ss.pick_random_samples(index, ss_count)
+        for entry in ss_picks:
             console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
             path = _ss.download_sample(entry)
             all_buffers.append(load_audio(path))
@@ -340,6 +368,10 @@ def chain_command(ctx: typer.Context) -> None:
         result = run_branch(audio, steps) if branch else run_chain(audio, steps)
         save_audio(result, output)
         console.print(f"[green]Saved:[/green] {output}")
+
+    if ss_picks:
+        src_path = _write_sources_json(ss_picks, output)
+        console.print(f"[dim]Sources written to {src_path}[/dim]")
 
 
 # ---------------------------------------------------------------------------
@@ -462,6 +494,7 @@ def recipe_run(
     # Resolve all inputs
     all_buffers: list[AudioBuffer] = []
     all_names: list[str] = []
+    ss_picks: list[IndexEntry] = []
 
     for f in (input_files or []):
         if not f.exists():
@@ -479,8 +512,8 @@ def recipe_run(
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {ss_count} sample(s) from #sample-sale...[/bold]")
         index = _ss.sync_index()
-        picks = _ss.pick_random_samples(index, ss_count)
-        for entry in picks:
+        ss_picks = _ss.pick_random_samples(index, ss_count)
+        for entry in ss_picks:
             console.print(f"  [dim]Selected:[/dim] {entry.filename or entry.url or entry.id}")
             path = _ss.download_sample(entry)
             all_buffers.append(load_audio(path))
@@ -558,6 +591,10 @@ def recipe_run(
         result = _run_pipeline(audio)
         save_audio(result, output)
         console.print(f"[green]Saved:[/green] {output}")
+
+    if ss_picks:
+        src_path = _write_sources_json(ss_picks, output)
+        console.print(f"[dim]Sources written to {src_path}[/dim]")
 
 
 @recipe_app.command(name="list")
@@ -961,3 +998,67 @@ def sample_sale_clear(
         console.print("[green]Cache and index cleared.[/green]")
     else:
         console.print("[green]Cached media files cleared.[/green] Index kept.")
+
+
+# ---------------------------------------------------------------------------
+# slack-post command
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="slack-post")
+def slack_post_cmd(
+    audio_file: Annotated[Path, typer.Argument(help="Path to the output audio file")],
+    label: Annotated[str, typer.Option("--label", "-l", help="Recipe or chain label")] = "untitled",
+    sources_file: Annotated[Optional[Path], typer.Option("--sources", "-s", help="Path to sources.json from the pipeline run")] = None,
+    channel: Annotated[Optional[str], typer.Option("--channel", "-c", help="Target Slack channel ID (overrides config)")] = None,
+    source_channel: Annotated[Optional[str], typer.Option("--source-channel", help="Channel ID where samples came from (for permalinks)")] = None,
+    source_channel_name: Annotated[str, typer.Option("--source-channel-name", help="Display name of source channel")] = "sample-sale",
+    run_url: Annotated[str, typer.Option("--run-url", help="URL to GitHub Actions run logs")] = "",
+) -> None:
+    """Post a processed audio file to Slack with source attribution in a thread.
+
+    Uploads the audio file with a main comment showing the recipe label,
+    then posts a thread reply with links back to the original samples
+    from #sample-sale.
+
+    Examples:
+
+      # Post with source attribution
+      rotten slack-post output.wav -l "bone-xray" -s sources.json
+
+      # Post to a specific channel with run logs link
+      rotten slack-post output.wav -l "fever-dream" -s sources.json \\
+        -c C0ARZFZ5KLJ --run-url "https://github.com/..."
+    """
+    from rottengenizdat.config import resolve_slack_channel, resolve_slack_token
+    from rottengenizdat.slack_post import post_from_sources_file
+
+    if not audio_file.exists():
+        console.print(f"[red]Audio file not found: {audio_file}[/red]")
+        raise typer.Exit(1)
+
+    token = resolve_slack_token()
+    target_channel = channel or resolve_slack_channel()
+
+    # Default source channel to the configured channel if not specified
+    src_channel = source_channel or resolve_slack_channel()
+
+    console.print(f"[bold]Posting[/bold] {audio_file} as [cyan]{label}[/cyan]")
+    if sources_file and sources_file.exists():
+        console.print(f"[dim]Sources: {sources_file}[/dim]")
+
+    posted_ts = post_from_sources_file(
+        token=token,
+        channel_id=target_channel,
+        audio_path=audio_file,
+        label=label,
+        sources_file=sources_file,
+        source_channel_id=src_channel,
+        source_channel_name=source_channel_name,
+        run_url=run_url,
+    )
+
+    if posted_ts:
+        console.print(f"[green]Posted![/green] (ts={posted_ts})")
+    else:
+        console.print("[yellow]File uploaded but could not confirm message timestamp.[/yellow]")
