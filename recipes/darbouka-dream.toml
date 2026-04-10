@@ -1,0 +1,27 @@
+[recipe]
+name = "darbouka-dream"
+mode = "branch"
+
+# middle eastern percussion color — darbouka_onnx gives everything
+# a hand-drum pulse while isis adds tonal resonance
+# rhythmic and exotic, even from non-percussive input
+
+[[steps]]
+effect = "rave"
+model = "darbouka_onnx"
+temperature = 1.1
+weight = 0.5
+
+[[steps]]
+effect = "rave"
+model = "darbouka_onnx"
+temperature = 0.8
+dims = "8,9,10,11,12,13,14,15"
+weight = 0.25
+
+[[steps]]
+effect = "rave"
+model = "isis"
+temperature = 0.9
+dims = "0,1,2,3"
+weight = 0.25

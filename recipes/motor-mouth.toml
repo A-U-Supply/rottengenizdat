@@ -1,0 +1,24 @@
+[recipe]
+name = "motor-mouth"
+mode = "sequential"
+
+# three passes through the voice model — everything becomes speech
+# first pass shapes the structure, second adds vocal character
+# third pass pushes it fully into uncanny-valley mouth territory
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 0.9
+dims = "0,1,2,3,4,5"
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.1
+
+[[steps]]
+effect = "rave"
+model = "VCTK"
+temperature = 1.3
+dims = "8,9,10,11,12,13,14,15"

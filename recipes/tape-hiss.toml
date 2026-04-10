@@ -1,0 +1,26 @@
+[recipe]
+name = "tape-hiss"
+mode = "sequential"
+
+# a cassette dubbed too many times
+# each pass through vintage adds more hiss and warmth
+# by the third generation the fidelity is shot but the vibe is immaculate
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.7
+noise = 0.05
+dims = "0,1,2,3"
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.8
+noise = 0.1
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.9
+noise = 0.2

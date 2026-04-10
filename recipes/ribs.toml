@@ -1,0 +1,20 @@
+[recipe]
+name = "ribs"
+mode = "sequential"
+
+# the actual roentgenizdat effect — audio pressed onto a used X-ray
+# and played back on a crappy homemade turntable
+# noisy, degraded, but you can still make out the song underneath
+
+[[steps]]
+effect = "rave"
+model = "vintage"
+temperature = 0.8
+noise = 0.15
+
+[[steps]]
+effect = "rave"
+model = "percussion"
+temperature = 0.9
+quantize = 0.2
+noise = 0.1

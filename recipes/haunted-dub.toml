@@ -8,7 +8,7 @@ mode = "branch"
 
 [[steps]]
 effect = "dry"
-weight = 0.7
+weight = 0.05
 
 [[steps]]
 effect = "rave"
