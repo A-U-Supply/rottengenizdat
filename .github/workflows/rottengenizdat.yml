@@ -77,7 +77,7 @@ jobs:
         run: |
           pip install uv
           uv pip install --system -e ".[torch]"
-          pip install yt-dlp
+          pip install --upgrade yt-dlp
 
       - name: Pick recipe
         id: recipe
