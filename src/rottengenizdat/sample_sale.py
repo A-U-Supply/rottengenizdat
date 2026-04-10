@@ -181,16 +181,24 @@ def download_sample(
         token = resolve_slack_token(**kwargs)
         import requests
 
-        # Slack redirects file downloads — requests strips the
-        # Authorization header on redirect, so we follow manually.
-        resp = requests.get(
-            entry.slack_url,
-            headers={"Authorization": f"Bearer {token}"},
-            allow_redirects=False,
-        )
-        if resp.status_code in (301, 302, 303, 307, 308):
-            redirect_url = resp.headers["Location"]
-            resp = requests.get(redirect_url)
+        # Follow redirects manually, keeping auth on every hop.
+        # requests strips Authorization on redirect to a different host,
+        # but Slack's CDN still needs it.
+        url = entry.slack_url
+        headers = {"Authorization": f"Bearer {token}"}
+        max_redirects = 5
+        for _ in range(max_redirects):
+            resp = requests.get(
+                url, headers=headers, timeout=30, allow_redirects=False,
+            )
+            if resp.status_code in (301, 302, 303, 307, 308):
+                url = resp.headers["Location"]
+                continue
+            break
+        else:
+            raise RuntimeError(
+                f"Too many redirects downloading {entry.filename or entry.id}"
+            )
         resp.raise_for_status()
 
         # Verify we got actual media, not an HTML error page
