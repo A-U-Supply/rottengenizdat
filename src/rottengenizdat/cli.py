@@ -412,16 +412,18 @@ def chain_command(ctx: typer.Context) -> None:
         all_names.append(f.stem)
 
     # User-provided URLs fill sample slots first
+    url_loaded = 0
     if audio_urls:
         console.print(f"[bold]Downloading {len(audio_urls)} user-provided URL(s)...[/bold]")
         url_bufs, url_names, url_picks = _fetch_audio_urls(audio_urls)
         all_buffers.extend(url_bufs)
         all_names.extend(url_names)
         ss_picks.extend(url_picks)
+        url_loaded = len(url_bufs)
 
     # Backfill remaining slots with random #sample-sale picks
     ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
-    backfill = max(0, ss_count - len(audio_urls))
+    backfill = max(0, ss_count - url_loaded)
     if backfill > 0:
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {backfill} sample(s) from #sample-sale...[/bold]")
@@ -611,16 +613,18 @@ def recipe_run(
 
     # User-provided URLs fill sample slots first
     url_list = [u.strip() for u in audio_urls.split(",") if u.strip()] if audio_urls else []
+    url_loaded = 0
     if url_list:
         console.print(f"[bold]Downloading {len(url_list)} user-provided URL(s)...[/bold]")
         url_bufs, url_names, url_picks = _fetch_audio_urls(url_list)
         all_buffers.extend(url_bufs)
         all_names.extend(url_names)
         ss_picks.extend(url_picks)
+        url_loaded = len(url_bufs)
 
     # Backfill remaining slots with random #sample-sale picks
     ss_count = sample_sale_count if sample_sale_count > 0 else (1 if sample_sale else 0)
-    backfill = max(0, ss_count - len(url_list))
+    backfill = max(0, ss_count - url_loaded)
     if backfill > 0:
         import rottengenizdat.sample_sale as _ss
         console.print(f"[bold]Fetching {backfill} sample(s) from #sample-sale...[/bold]")
