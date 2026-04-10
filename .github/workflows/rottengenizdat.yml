@@ -53,6 +53,13 @@ jobs:
           fi
           echo "name=$RECIPE" >> "$GITHUB_OUTPUT"
 
+      - name: Configure Slack
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          rotten config set slack.token "$SLACK_BOT_TOKEN"
+          rotten config set slack.channel C07QNGDTBR6
+
       - name: Run rottengenizdat
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
@@ -89,7 +96,7 @@ jobs:
           curl -s -X POST https://slack.com/api/files.completeUploadExternal \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${RECIPE}\"}], \"channel_id\": \"yappaholics-yapanonymous\", \"initial_comment\": \":radio: *rottengenizdat: ${RECIPE}* \\n<${RUN_URL}|View logs>\"}"
+            -d "{\"files\": [{\"id\": \"$FILE_ID\", \"title\": \"rottengenizdat: ${RECIPE}\"}], \"channel_id\": \"C0ARZFZ5KLJ\", \"initial_comment\": \":radio: *rottengenizdat: ${RECIPE}* \\n<${RUN_URL}|View logs>\"}"
 
       - name: Notify Slack on failure
         if: failure()
@@ -101,4 +108,4 @@ jobs:
           curl -s -X POST https://slack.com/api/chat.postMessage \
             -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
             -H "Content-Type: application/json" \
-            -d "{\"channel\": \"yappaholics-yapanonymous\", \"text\": \":x: rottengenizdat run failed (recipe: ${RECIPE}). <${RUN_URL}|View logs>\"}"
+            -d "{\"channel\": \"C0ARZFZ5KLJ\", \"text\": \":x: rottengenizdat run failed (recipe: ${RECIPE}). <${RUN_URL}|View logs>\"}"
