@@ -206,12 +206,15 @@ export async function handleInteraction(
           // Always post feedback
           const postTo = channelId || undefined;
           if (postTo) {
+            const urlNote = urls.length > 0
+              ? ` with ${urls.length} URL(s) + ${Math.max(0, sampleCount - urls.length)} sample(s)`
+              : ` with ${sampleCount} sample(s)`;
             const msg = ok
-              ? `:radio: Firing up *${recipeName}* with ${sampleCount} sample(s) (${inputMode})... results incoming.`
+              ? `:radio: Firing up *${recipeName}*${urlNote} (${inputMode})... results incoming.`
               : `:warning: Failed to dispatch workflow.${dispatchError ? ` Error: ${dispatchError}` : ""}`;
             const blocks = confirmationBlocks(msg);
             if (usage) blocks.push(buildUsageContextShort(usage));
-            await fetch("https://slack.com/api/chat.postEphemeral", {
+            const ephResp = await fetch("https://slack.com/api/chat.postEphemeral", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -219,6 +222,12 @@ export async function handleInteraction(
               },
               body: JSON.stringify({ channel: postTo, user: userId, text: msg, blocks }),
             });
+            const ephData = (await ephResp.json()) as { ok: boolean; error?: string };
+            if (!ephData.ok) {
+              console.error(`chat.postEphemeral failed: ${ephData.error}`);
+            }
+          } else {
+            console.error("No channelId — cannot post ephemeral status message");
           }
         })();
         if (ctx) ctx.waitUntil(work);
@@ -319,12 +328,15 @@ export async function handleInteraction(
 
           const postTo = channelId || undefined;
           if (postTo) {
+            const urlNote = urls.length > 0
+              ? ` with ${urls.length} URL(s) + ${Math.max(0, sampleCount - urls.length)} sample(s)`
+              : ` with ${sampleCount} sample(s)`;
             const msg = ok
-              ? `:wrench: Firing up custom chain: *${stepsLabel}* with ${sampleCount} sample(s) (${inputMode})...`
+              ? `:wrench: Firing up custom chain: *${stepsLabel}*${urlNote} (${inputMode})...`
               : `:warning: Failed to dispatch workflow.${dispatchError ? ` Error: ${dispatchError}` : ""}`;
             const blocks = confirmationBlocks(msg);
             if (usage) blocks.push(buildUsageContextShort(usage));
-            await fetch("https://slack.com/api/chat.postEphemeral", {
+            const ephResp = await fetch("https://slack.com/api/chat.postEphemeral", {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
@@ -332,6 +344,12 @@ export async function handleInteraction(
               },
               body: JSON.stringify({ channel: postTo, user: userId, text: msg, blocks }),
             });
+            const ephData = (await ephResp.json()) as { ok: boolean; error?: string };
+            if (!ephData.ok) {
+              console.error(`chat.postEphemeral failed: ${ephData.error}`);
+            }
+          } else {
+            console.error("No channelId — cannot post ephemeral status message");
           }
         })();
         if (ctx) ctx.waitUntil(work);
