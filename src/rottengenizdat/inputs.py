@@ -13,6 +13,7 @@ class InputMode(Enum):
     SPLICE = "splice"
     CONCAT = "concat"
     INDEPENDENT = "independent"
+    BLEND = "blend"
 
     @classmethod
     def resolve(cls, mode_str: str | None, num_inputs: int) -> InputMode:
@@ -42,7 +43,7 @@ def combine_inputs(
         return [buffers[0]]
     elif mode == InputMode.CONCAT:
         return [concat_buffers(buffers)]
-    elif mode == InputMode.INDEPENDENT:
+    elif mode in (InputMode.INDEPENDENT, InputMode.BLEND):
         return list(buffers)
     elif mode == InputMode.SPLICE:
         return [splice_buffers(buffers, min_seconds=splice_min, max_seconds=splice_max)]

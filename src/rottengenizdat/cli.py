@@ -173,6 +173,7 @@ MULTI-INPUT — feed multiple files, combined before chaining:
                      random segments (0.25s–4.0s), shuffle, reassemble.
     concat ......... Join files end-to-end in order.
     independent .... Process each file separately, output to directory.
+    blend .......... Process each file separately, mix outputs together.
 
   Tune splice: --splice-min 0.1 --splice-max 2.0 (seconds)
 
@@ -322,6 +323,17 @@ def chain_command(ctx: typer.Context) -> None:
             out_path = output / f"{i_buf+1:03d}-{src_name}.wav"
             save_audio(result, out_path)
             console.print(f"[green]Saved:[/green] {out_path}")
+    elif input_mode == InputMode.BLEND:
+        from rottengenizdat.chain import mix_buffers
+        results = []
+        for i_buf, (audio, src_name) in enumerate(zip(combined, all_names)):
+            console.print(f"\n[bold]Processing input {i_buf+1}/{len(combined)}:[/bold] {src_name}")
+            result = run_branch(audio, steps) if branch else run_chain(audio, steps)
+            results.append(result)
+        console.print(f"\n[bold]Blending {len(results)} outputs[/bold]")
+        blended = mix_buffers(results)
+        save_audio(blended, output)
+        console.print(f"[green]Saved:[/green] {output}")
     else:
         audio = combined[0]
         console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")
@@ -389,6 +401,7 @@ RUNNING RECIPES:
                      random segments (0.25s–4.0s), shuffle, reassemble.
     concat ......... Join files end-to-end in order.
     independent .... Process each file separately, output to directory.
+    blend .......... Process each file separately, mix outputs together.
 
   Tune splice: --splice-min 0.1 --splice-max 2.0 (seconds)
 
@@ -528,6 +541,17 @@ def recipe_run(
             out_path = output / f"{i+1:03d}-{src_name}.wav"
             save_audio(result, out_path)
             console.print(f"[green]Saved:[/green] {out_path}")
+    elif input_mode == InputMode.BLEND:
+        from rottengenizdat.chain import mix_buffers
+        results = []
+        for i, (audio, src_name) in enumerate(zip(combined, all_names)):
+            console.print(f"\n[bold]Processing input {i+1}/{len(combined)}:[/bold] {src_name}")
+            result = _run_pipeline(audio)
+            results.append(result)
+        console.print(f"\n[bold]Blending {len(results)} outputs[/bold]")
+        blended = mix_buffers(results)
+        save_audio(blended, output)
+        console.print(f"[green]Saved:[/green] {output}")
     else:
         audio = combined[0]
         console.print(f"  {audio.duration:.1f}s, {audio.channels}ch, {audio.sample_rate}Hz")

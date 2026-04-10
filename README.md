@@ -62,6 +62,7 @@ rotten recipe run recipes/fever-dream.toml a.wav b.wav --mode independent -o out
 **Modes:**
 - `splice` (default) — chop all inputs into random segments, shuffle, reassemble
 - `concat` — join inputs end-to-end in order
+- `blend` — process each input through the recipe independently, mix all outputs together
 - `independent` — process each input separately, output to a directory
 
 Splice parameters: `--splice-min 0.25 --splice-max 4.0` (seconds)

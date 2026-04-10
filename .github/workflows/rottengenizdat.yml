@@ -33,6 +33,26 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Cache uv packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-uv-
+
+      - name: Cache RAVE models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/rottengenizdat/models
+          key: rave-models-v1
+
       - name: Install system dependencies
         run: |
           sudo apt-get update

@@ -107,7 +107,7 @@ export function buildHelpView(): object {
       text: [
         "*Recipe* \u2014 Pick a recipe or leave on Random. Type to search.",
         "*Sample count* \u2014 How many random audio clips to pull from #sample-sale.",
-        "*Input mode* \u2014 How multiple inputs are combined: splice (chop & shuffle), concat (end-to-end), or independent (each processed separately).",
+        "*Input mode* \u2014 How multiple inputs are combined: splice (chop & shuffle), concat (end-to-end), blend (each through recipe, mix outputs), or independent (each processed separately).",
         "*Audio URLs* \u2014 Paste audio/video URLs directly instead of (or in addition to) #sample-sale samples.",
       ].join("\n"),
     },
@@ -126,7 +126,7 @@ export function buildHelpView(): object {
       text: [
         "1. Your command triggers a GitHub Actions pipeline",
         "2. Random audio samples are pulled from #sample-sale (or your URLs)",
-        "3. Inputs are combined (splice/concat/independent) and fed through RAVE neural networks",
+        "3. Inputs are combined (splice/concat/blend/independent) and fed through RAVE neural networks",
         "4. The recipe's effect chain mangles the audio through one or more models",
         "5. The result is posted back to the channel",
       ].join("\n"),
@@ -258,6 +258,10 @@ export function buildModalView(channelId: string = ""): object {
             {
               text: { type: "plain_text", text: "Concat (end-to-end)" },
               value: "concat",
+            },
+            {
+              text: { type: "plain_text", text: "Blend (each through recipe, mix outputs)" },
+              value: "blend",
             },
             {
               text: { type: "plain_text", text: "Independent (each separately)" },
