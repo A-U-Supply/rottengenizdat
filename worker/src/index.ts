@@ -54,7 +54,10 @@ export async function handleSlashCommand(body: string, env: Env, ctx: ExecutionC
   if (command === "help") {
     const triggerId = params.get("trigger_id");
     if (triggerId) {
-      ctx.waitUntil(openViewModal(env, triggerId, buildHelpView()));
+      const error = await openViewModal(env, triggerId, buildHelpView());
+      if (error) {
+        return slackResponse(`:x: Failed to open help: ${error}`);
+      }
       return new Response("", { status: 200 });
     }
     return slackResponse(buildHelpText());
@@ -90,7 +93,10 @@ export async function handleSlashCommand(body: string, env: Env, ctx: ExecutionC
     const triggerId = params.get("trigger_id");
     const channelId = params.get("channel_id") ?? "";
     if (triggerId) {
-      ctx.waitUntil(openModal(env, triggerId, channelId));
+      const error = await openModal(env, triggerId, channelId);
+      if (error) {
+        return slackResponse(`:x: Failed to open modal: ${error}`);
+      }
     }
     return new Response("", { status: 200 });
   }
@@ -168,7 +174,7 @@ export async function handleSlashCommand(body: string, env: Env, ctx: ExecutionC
 // Modal openers
 // ---------------------------------------------------------------------------
 
-async function openViewModal(env: Env, triggerId: string, view: object): Promise<void> {
+async function openViewModal(env: Env, triggerId: string, view: object): Promise<string | null> {
   const resp = await fetch("https://slack.com/api/views.open", {
     method: "POST",
     headers: {
@@ -180,12 +186,14 @@ async function openViewModal(env: Env, triggerId: string, view: object): Promise
   const data = (await resp.json()) as { ok: boolean; error?: string };
   if (!data.ok) {
     console.error(`views.open failed: ${data.error}`);
+    return data.error ?? "unknown error";
   }
+  return null;
 }
 
-async function openModal(env: Env, triggerId: string, channelId: string): Promise<void> {
+async function openModal(env: Env, triggerId: string, channelId: string): Promise<string | null> {
   const view = buildModalView(channelId);
-  await openViewModal(env, triggerId, view);
+  return openViewModal(env, triggerId, view);
 }
 
 // ---------------------------------------------------------------------------
