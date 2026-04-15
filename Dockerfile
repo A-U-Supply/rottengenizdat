@@ -5,10 +5,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -r
 WORKDIR /app
 
 RUN pip install uv
-COPY pyproject.toml uv.lock ./
-RUN uv pip install --system -e "."
 COPY . .
-RUN uv pip install --system -e "."
+RUN uv pip install --system .
 
 WORKDIR /work
 
