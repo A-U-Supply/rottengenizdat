@@ -54,18 +54,18 @@ class AudioBuffer:
         return cls(samples=tensor, sample_rate=sample_rate)
 
 
-_VIDEO_EXTS = {".mp4", ".webm", ".mkv", ".avi", ".mov", ".flv", ".m4v"}
+_NATIVE_EXTS = {".wav", ".flac", ".ogg", ".aiff", ".aif"}
 
 
-def _extract_audio(path: Path) -> Path:
-    """Extract audio from a video file to a temporary WAV using ffmpeg."""
+def _convert_to_wav(path: Path) -> Path:
+    """Convert any audio/video file to WAV via ffmpeg."""
     import shutil
     import subprocess
     import tempfile
 
     if not shutil.which("ffmpeg"):
         raise RuntimeError(
-            f"Cannot read '{path.name}': ffmpeg is required for video files but was not found on PATH."
+            f"Cannot read '{path.name}': ffmpeg is required but was not found on PATH."
         )
     tmp = Path(tempfile.mktemp(suffix=".wav"))
     result = subprocess.run(
@@ -74,16 +74,17 @@ def _extract_audio(path: Path) -> Path:
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"ffmpeg failed to extract audio from '{path.name}': {result.stderr.decode(errors='replace').strip()}"
+            f"ffmpeg failed to convert '{path.name}': {result.stderr.decode(errors='replace').strip()}"
         )
     return tmp
 
 
 def load_audio(path: Path, target_sr: int | None = None) -> AudioBuffer:
-    """Load an audio file and optionally resample.
+    """Load an audio or video file and optionally resample.
 
-    Uses soundfile for I/O; torchaudio.functional.resample for resampling.
-    Video files (mp4, webm, etc.) are converted to WAV via ffmpeg first.
+    Files that soundfile can read natively (wav, flac, ogg, aiff) are read
+    directly. Everything else (mp3, m4a, aac, opus, mp4, webm, etc.) is
+    converted to WAV via ffmpeg first.
     """
     path = Path(path)
     if not path.exists():
@@ -96,8 +97,8 @@ def load_audio(path: Path, target_sr: int | None = None) -> AudioBuffer:
 
     tmp_path = None
     read_path = path
-    if path.suffix.lower() in _VIDEO_EXTS:
-        tmp_path = _extract_audio(path)
+    if path.suffix.lower() not in _NATIVE_EXTS:
+        tmp_path = _convert_to_wav(path)
         read_path = tmp_path
 
     try:
