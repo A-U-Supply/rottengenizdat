@@ -69,6 +69,19 @@ def load_rave_model(
     return model
 
 
+def _has_prior(model: torch.jit.ScriptModule) -> bool:
+    """Check if a model has a working prior for unconditional generation."""
+    if not hasattr(model, "_prior"):
+        return False
+    try:
+        with torch.no_grad():
+            seed = torch.randn(1, 1, 1)
+            z = model._prior.forward(seed)
+            return z.shape[1] >= 4  # sensible latent dims
+    except Exception:
+        return False
+
+
 _RAVE_HELP = """\
 RAVE variational autoencoder — latent space audio mangling.
 
@@ -134,6 +147,19 @@ KNOBS — manipulate the latent space between encode and decode:
                       Crushes the continuous latent into steps.
                       0.1 = subtle, 0.5 = crunchy, 1.0 = obliterated.
 
+  -g, --generate      Generate new audio from the model's prior (no input
+                      file needed). Uses the model's generative prior if
+                      available (vintage, VCTK, nasa), otherwise falls
+                      back to random latent generation.
+
+  --duration N        Duration in seconds for --generate (default 2.0).
+
+  --morph-with PATH   Path to a second audio file for latent interpolation.
+                      Encodes both files, blends their latent representations,
+                      decodes. Use --morph-ratio to set the blend (0-1).
+
+  --morph-ratio R     Blend ratio for --morph-with (0.0 = file A, 1.0 = file B).
+
   --sweep             Generate a grid of outputs sweeping one parameter.
                       e.g. --sweep temperature=0.5,1.0,1.5,2.0
                       Output path (-o) becomes a directory.
@@ -163,6 +189,18 @@ EXAMPLES:
 
   Explore temperature range:
     rotten rave input.wav -m vintage --sweep temperature=0.3,0.7,1.0,1.5,2.0 -o grid/
+
+  Generate 4 seconds of new sound from the model's prior:
+    rotten rave -g -m vintage --duration 4 -t 1.2 -o dream.wav
+
+  Generate a drum pattern from scratch (random latent fallback):
+    rotten rave -g -m percussion --duration 2 -t 1.5 -q 0.1 -o drums.wav
+
+  Morph between two files in latent space:
+    rotten rave kick.wav --morph-with snare.wav -m percussion --morph-ratio 0.5 -o hybrid.wav
+
+  Multi-step morph with dedicated morph command:
+    rotten morph kick.wav snare.wav -m vintage --steps 5 -o morph-grid/
 """
 
 
@@ -263,6 +301,205 @@ class RaveEffect(AudioEffect):
         wet_samples = wet.samples[:, :min_len]
         blended = dry_samples * (1.0 - mix) + wet_samples * mix
         return AudioBuffer(samples=blended, sample_rate=audio.sample_rate)
+
+    def generate(
+        self,
+        model_name: str = "percussion",
+        duration: float = 2.0,
+        sample_rate: int = 44100,
+        temperature: float = 1.0,
+        noise: float = 0.0,
+        dims: Optional[str] = None,
+        reverse: bool = False,
+        shuffle_chunks: int = 0,
+        quantize: float = 0.0,
+        **kwargs,
+    ) -> AudioBuffer:
+        """Generate audio from the model's prior (or random latent as fallback).
+
+        Args:
+            model_name: Pretrained model to use.
+            duration: Output duration in seconds.
+            sample_rate: Sample rate for output audio.
+            temperature: Scale latent vectors (>1 = more extreme, <1 = subtle).
+            noise: Amount of random noise to add to latent space (0-1).
+            dims: Comma-separated latent dim indices to manipulate.
+            reverse: Reverse the temporal axis of the latent.
+            shuffle_chunks: Shuffle latent in temporal chunks (0 = off).
+            quantize: Snap latent values to a grid of this step size (0.0 = off).
+        """
+        model = load_rave_model(model_name)
+
+        # Rough frames-per-second: each latent frame decodes to ~2048 samples
+        n_frames = max(1, int(duration * sample_rate / 2048))
+
+        with torch.no_grad():
+            if _has_prior(model):
+                seed = torch.randn(1, 1, n_frames) * temperature
+                z = model._prior.forward(seed)
+            else:
+                # Fallback: generate random latent directly
+                # Determine latent dims from a test encode
+                x_test = torch.randn(1, 1, 4096)
+                z_test = model.encode(x_test)
+                n_latent = z_test.shape[1]
+                z = torch.randn(1, n_latent, n_frames) * temperature
+
+            # Save original for dim restoration
+            z_original = z.clone() if dims is not None else None
+
+            # Build dim mask
+            if dims is not None:
+                n_latent = z.shape[1]
+                dim_indices = [int(d) for d in dims.split(",")]
+                dim_indices = [i for i in dim_indices if i < n_latent]
+                if not dim_indices:
+                    dims = None
+                else:
+                    mask = torch.ones(n_latent, dtype=torch.bool)
+                    mask[dim_indices] = False
+
+            # Apply noise after prior (adds texture to generated output)
+            if noise > 0.0:
+                z = z + torch.randn_like(z) * noise
+
+            if quantize > 0.0:
+                z = torch.round(z / quantize) * quantize
+
+            if reverse:
+                z = z.flip(dims=[-1])
+
+            if shuffle_chunks > 0:
+                n_frames_actual = z.shape[-1]
+                n_chunks = n_frames_actual // shuffle_chunks
+                if n_chunks > 1:
+                    chunks = list(z.split(shuffle_chunks, dim=-1))
+                    indices = torch.randperm(len(chunks))
+                    z = torch.cat([chunks[i] for i in indices], dim=-1)
+
+            if dims is not None:
+                z[:, mask, :] = z_original[:, mask, :]
+
+            x_hat = model.decode(z)
+
+        buf = AudioBuffer.from_model_output(x_hat, sample_rate=sample_rate)
+        return buf.to_mono()
+
+    @staticmethod
+    def interpolate(
+        audio_a: AudioBuffer,
+        audio_b: AudioBuffer,
+        model_name: str,
+        ratio: float = 0.5,
+        temperature: float = 1.0,
+        noise: float = 0.0,
+        dims: Optional[str] = None,
+        reverse: bool = False,
+        shuffle_chunks: int = 0,
+        quantize: float = 0.0,
+    ) -> AudioBuffer:
+        """Interpolate between two audio files in latent space.
+
+        Encodes both files, blends their latent representations at *ratio*,
+        then decodes the result. Ratio 0.0 = all A, 1.0 = all B.
+
+        Uses spherical linear interpolation (slerp) for a perceptually
+        smoother crossfade than linear blending.
+
+        Args:
+            audio_a: First input audio buffer.
+            audio_b: Second input audio buffer.
+            model_name: Pretrained model to use.
+            ratio: Blend point (0.0 = A, 0.5 = halfway, 1.0 = B).
+            temperature: Scale latent vectors post-interpolation.
+            noise: Random noise added to latent space (0-1).
+            dims: Comma-separated latent dim indices to manipulate.
+            reverse: Reverse the temporal axis of the latent.
+            shuffle_chunks: Shuffle latent in temporal chunks (0 = off).
+            quantize: Snap latent values to a grid (0.0 = off).
+        """
+        model = load_rave_model(model_name)
+
+        with torch.no_grad():
+            mono_a = audio_a.to_mono()
+            mono_b = audio_b.to_mono()
+            x_a = mono_a.as_model_input()
+            x_b = mono_b.as_model_input()
+
+            z_a = model.encode(x_a)
+            z_b = model.encode(x_b)
+
+            # Match temporal length — use the shorter one
+            min_frames = min(z_a.shape[-1], z_b.shape[-1])
+            z_a = z_a[:, :, :min_frames]
+            z_b = z_b[:, :, :min_frames]
+
+            # Spherical linear interpolation (slerp) for smoother morphing
+            if ratio <= 0.0:
+                z = z_a
+            elif ratio >= 1.0:
+                z = z_b
+            else:
+                # Normalize for slerp
+                norm_a = torch.norm(z_a, dim=1, keepdim=True).clamp(min=1e-8)
+                norm_b = torch.norm(z_b, dim=1, keepdim=True).clamp(min=1e-8)
+                za_norm = z_a / norm_a
+                zb_norm = z_b / norm_b
+
+                # Angle between vectors
+                dot = (za_norm * zb_norm).sum(dim=1, keepdim=True).clamp(-1.0, 1.0)
+                omega = torch.acos(dot)
+
+                sin_omega = torch.sin(omega).clamp(min=1e-8)
+                weight_a = torch.sin((1.0 - ratio) * omega) / sin_omega
+                weight_b = torch.sin(ratio * omega) / sin_omega
+
+                # Blend magnitudes linearly
+                norm_blend = norm_a * (1.0 - ratio) + norm_b * ratio
+
+                z = (za_norm * weight_a + zb_norm * weight_b) * norm_blend
+
+            # Apply knobs
+            z_original = z.clone() if dims is not None else None
+
+            if dims is not None:
+                n_latent = z.shape[1]
+                dim_indices = [int(d) for d in dims.split(",")]
+                dim_indices = [i for i in dim_indices if i < n_latent]
+                if not dim_indices:
+                    dims = None
+                else:
+                    mask = torch.ones(n_latent, dtype=torch.bool)
+                    mask[dim_indices] = False
+
+            if temperature != 1.0:
+                z = z * temperature
+
+            if noise > 0.0:
+                z = z + torch.randn_like(z) * noise
+
+            if quantize > 0.0:
+                z = torch.round(z / quantize) * quantize
+
+            if reverse:
+                z = z.flip(dims=[-1])
+
+            if shuffle_chunks > 0:
+                n_frames_actual = z.shape[-1]
+                n_chunks = n_frames_actual // shuffle_chunks
+                if n_chunks > 1:
+                    chunks = list(z.split(shuffle_chunks, dim=-1))
+                    indices = torch.randperm(len(chunks))
+                    z = torch.cat([chunks[i] for i in indices], dim=-1)
+
+            if dims is not None:
+                z[:, mask, :] = z_original[:, mask, :]
+
+            x_hat = model.decode(z)
+
+        # Use A's sample rate (both should match)
+        buf = AudioBuffer.from_model_output(x_hat, sample_rate=audio_a.sample_rate)
+        return buf.to_mono()
 
     def register_command(self, app: typer.Typer) -> None:
         """Register the rave subcommand."""
@@ -370,7 +607,75 @@ class RaveEffect(AudioEffect):
             splice_max: Annotated[
                 float, typer.Option("--splice-max", help="Max splice segment seconds")
             ] = 4.0,
+            generate: Annotated[
+                bool, typer.Option("--generate", "-g", help="Generate new audio from the model's prior (no input file needed)")
+            ] = False,
+            duration: Annotated[
+                float, typer.Option("--duration", help="Duration in seconds for generated output (default 2.0)")
+            ] = 2.0,
+            morph_with: Annotated[
+                Optional[str], typer.Option("--morph-with", help="Path to a second audio file for latent interpolation")
+            ] = None,
+            morph_ratio: Annotated[
+                float, typer.Option("--morph-ratio", help="Blend ratio for --morph-with (0.0 = file A, 1.0 = file B)")
+            ] = 0.5,
         ) -> None:
+            # --- Generation mode (no input file needed) ---
+            if generate:
+                has_prior = False
+                try:
+                    mdl = load_rave_model(model)
+                    has_prior = _has_prior(mdl)
+                except Exception:
+                    pass
+                gen_label = "prior" if has_prior else "random latent"
+                console.print(
+                    f"[bold]Generating:[/bold] rave model={model} temp={temperature} "
+                    f"duration={duration}s mode={gen_label} "
+                    f"noise={noise_amount} dims={dims} reverse={reverse} "
+                    f"shuffle={shuffle_chunks} quantize={quantize_step}"
+                )
+                result = self.generate(
+                    model_name=model,
+                    duration=duration,
+                    temperature=temperature,
+                    noise=noise_amount,
+                    dims=dims,
+                    reverse=reverse,
+                    shuffle_chunks=shuffle_chunks,
+                    quantize=quantize_step,
+                )
+                save_audio(result, output)
+                console.print(f"[green]Saved:[/green] {output}")
+                return
+
+            # --- Morph mode (interpolate between two files) ---
+            if morph_with is not None and input_files:
+                b_path = Path(morph_with)
+                if not b_path.exists():
+                    console.print(f"[red]File not found: {b_path}[/red]")
+                    raise typer.Exit(1)
+                console.print(
+                    f"[bold]Morphing:[/bold] {input_files[0]} <-> {b_path} "
+                    f"ratio={morph_ratio} model={model} temp={temperature}"
+                )
+                audio_a = load_audio(input_files[0])
+                audio_b = load_audio(b_path)
+                result = self.interpolate(
+                    audio_a, audio_b,
+                    model_name=model,
+                    ratio=morph_ratio,
+                    temperature=temperature,
+                    noise=noise_amount,
+                    dims=dims,
+                    reverse=reverse,
+                    shuffle_chunks=shuffle_chunks,
+                    quantize=quantize_step,
+                )
+                save_audio(result, output)
+                console.print(f"[green]Saved:[/green] {output}")
+                return
+
             all_buffers: list[AudioBuffer] = []
             all_names: list[str] = []
 
