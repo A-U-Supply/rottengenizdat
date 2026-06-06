@@ -335,15 +335,20 @@ class RaveEffect(AudioEffect):
 
         with torch.no_grad():
             if _has_prior(model):
-                seed = torch.randn(1, 1, n_frames) * temperature
+                # Prior uses its own internal temperature — seed magnitude doesn't
+                # matter, it just needs the right shape as a write buffer.
+                seed = torch.randn(1, 1, n_frames)
                 z = model._prior.forward(seed)
             else:
                 # Fallback: generate random latent directly
-                # Determine latent dims from a test encode
                 x_test = torch.randn(1, 1, 4096)
                 z_test = model.encode(x_test)
                 n_latent = z_test.shape[1]
-                z = torch.randn(1, n_latent, n_frames) * temperature
+                z = torch.randn(1, n_latent, n_frames)
+
+            # Apply temperature as latent scaling (same as process() pipeline)
+            if temperature != 1.0:
+                z = z * temperature
 
             # Save original for dim restoration
             z_original = z.clone() if dims is not None else None
@@ -383,7 +388,21 @@ class RaveEffect(AudioEffect):
             x_hat = model.decode(z)
 
         buf = AudioBuffer.from_model_output(x_hat, sample_rate=sample_rate)
-        return buf.to_mono()
+        buf = buf.to_mono()
+
+        # Prior output is often very quiet — normalize to a listenable level.
+        # Use RMS normalization with a peak ceiling to avoid clipping spikes.
+        rms = buf.samples.square().mean().sqrt()
+        if rms > 0:
+            target_rms = 0.15  # ~ -16dB RMS, typical for speech
+            gain = min(target_rms / rms, 0.95 / (buf.samples.abs().max() + 1e-8))
+            if gain > 1.0:
+                buf = AudioBuffer(
+                    samples=buf.samples * gain,
+                    sample_rate=buf.sample_rate,
+                )
+
+        return buf
 
     @staticmethod
     def interpolate(
@@ -499,6 +518,82 @@ class RaveEffect(AudioEffect):
 
         # Use A's sample rate (both should match)
         buf = AudioBuffer.from_model_output(x_hat, sample_rate=audio_a.sample_rate)
+        return buf.to_mono()
+
+    @staticmethod
+    def encode_latent(audio: AudioBuffer, model_name: str) -> tuple[torch.Tensor, int]:
+        """Encode audio to latent representation, returning (z, sample_rate).
+
+        The latent tensor can be saved to disk and decoded later — potentially
+        through a DIFFERENT model for cross-model transfer.
+        """
+        model = load_rave_model(model_name)
+        mono = audio.to_mono()
+        x = mono.as_model_input()
+        with torch.no_grad():
+            z = model.encode(x)
+        return z.cpu().clone(), audio.sample_rate
+
+    @staticmethod
+    def decode_latent(
+        z: torch.Tensor,
+        model_name: str,
+        sample_rate: int = 44100,
+        temperature: float = 1.0,
+        noise: float = 0.0,
+        dims: Optional[str] = None,
+        reverse: bool = False,
+        shuffle_chunks: int = 0,
+        quantize: float = 0.0,
+    ) -> AudioBuffer:
+        """Decode a latent tensor through a RAVE model (potentially different from encoder).
+
+        This enables cross-model transfer: encode through percussion, decode
+        through VCTK. The latent shape must be compatible with the decode model.
+        """
+        model = load_rave_model(model_name)
+
+        with torch.no_grad():
+            z = z.clone()
+
+            z_original = z.clone() if dims is not None else None
+
+            if dims is not None:
+                n_latent = z.shape[1]
+                dim_indices = [int(d) for d in dims.split(",")]
+                dim_indices = [i for i in dim_indices if i < n_latent]
+                if not dim_indices:
+                    dims = None
+                else:
+                    mask = torch.ones(n_latent, dtype=torch.bool)
+                    mask[dim_indices] = False
+
+            if temperature != 1.0:
+                z = z * temperature
+
+            if noise > 0.0:
+                z = z + torch.randn_like(z) * noise
+
+            if quantize > 0.0:
+                z = torch.round(z / quantize) * quantize
+
+            if reverse:
+                z = z.flip(dims=[-1])
+
+            if shuffle_chunks > 0:
+                n_frames_actual = z.shape[-1]
+                n_chunks = n_frames_actual // shuffle_chunks
+                if n_chunks > 1:
+                    chunks = list(z.split(shuffle_chunks, dim=-1))
+                    indices = torch.randperm(len(chunks))
+                    z = torch.cat([chunks[i] for i in indices], dim=-1)
+
+            if dims is not None:
+                z[:, mask, :] = z_original[:, mask, :]
+
+            x_hat = model.decode(z)
+
+        buf = AudioBuffer.from_model_output(x_hat, sample_rate=sample_rate)
         return buf.to_mono()
 
     def register_command(self, app: typer.Typer) -> None:
@@ -619,6 +714,12 @@ class RaveEffect(AudioEffect):
             morph_ratio: Annotated[
                 float, typer.Option("--morph-ratio", help="Blend ratio for --morph-with (0.0 = file A, 1.0 = file B)")
             ] = 0.5,
+            repeat_count: Annotated[
+                int, typer.Option("--repeat", help="Feed output back as input N times. Compounds the model's artifacts")
+            ] = 1,
+            grid: Annotated[
+                Optional[str], typer.Option("--grid", help="Multi-param grid sweep. e.g. 'temperature=0.5,1.0,1.5;noise=0,0.1,0.2'. Output becomes a directory")
+            ] = None,
         ) -> None:
             # --- Generation mode (no input file needed) ---
             if generate:
@@ -748,6 +849,18 @@ class RaveEffect(AudioEffect):
                             shuffle_chunks=shuffle_chunks,
                             quantize=quantize_step,
                         )
+                        for _ in range(repeat_count - 1):
+                            result = self.process(
+                                result,
+                                model_name=model,
+                                temperature=temperature,
+                                noise=noise_amount,
+                                mix=1.0,  # no dry blend on repeats
+                                dims=dims,
+                                reverse=reverse,
+                                shuffle_chunks=shuffle_chunks,
+                                quantize=quantize_step,
+                            )
                         save_audio(result, out_path)
                         console.print(f"[green]Saved:[/green] {out_path}")
             else:
@@ -757,11 +870,18 @@ class RaveEffect(AudioEffect):
                         audio, output, model, temperature, noise_amount, mix,
                         dims, reverse, shuffle_chunks, quantize_step, sweep,
                     )
+                elif grid:
+                    self._run_grid(
+                        audio, output, model, temperature, noise_amount, mix,
+                        dims, reverse, shuffle_chunks, quantize_step, grid,
+                        repeat=repeat_count,
+                    )
                 else:
                     console.print(
                         f"[bold]Processing:[/bold] rave model={model} temp={temperature} "
                         f"noise={noise_amount} mix={mix} dims={dims} reverse={reverse} "
                         f"shuffle={shuffle_chunks} quantize={quantize_step}"
+                        + (f" repeat={repeat_count}" if repeat_count > 1 else "")
                     )
                     result = self.process(
                         audio,
@@ -774,10 +894,169 @@ class RaveEffect(AudioEffect):
                         shuffle_chunks=shuffle_chunks,
                         quantize=quantize_step,
                     )
+                    for _ in range(repeat_count - 1):
+                        result = self.process(
+                            result,
+                            model_name=model,
+                            temperature=temperature,
+                            noise=noise_amount,
+                            mix=1.0,
+                            dims=dims,
+                            reverse=reverse,
+                            shuffle_chunks=shuffle_chunks,
+                            quantize=quantize_step,
+                        )
                     save_audio(result, output)
                     console.print(f"[green]Saved:[/green] {output}")
 
+        # Register encode/decode subcommands
+        self._register_extra_commands(app)
+
         return rave_command
+
+    def _run_grid(
+        self,
+        audio: AudioBuffer,
+        output_dir: Path,
+        model: str,
+        temperature: float,
+        noise_amount: float,
+        mix: float,
+        dims: Optional[str],
+        reverse: bool,
+        shuffle_chunks: int,
+        quantize_step: float,
+        grid: str,
+        repeat: int = 1,
+    ) -> None:
+        """Run a multi-parameter grid sweep and save all combinations."""
+        from itertools import product
+
+        # Parse "temperature=0.5,1.0,1.5;noise=0,0.1,0.2"
+        param_sets: list[tuple[str, list[float]]] = []
+        for part in grid.split(";"):
+            part = part.strip()
+            if not part:
+                continue
+            name, vals = part.split("=", 1)
+            param_sets.append((name.strip(), [float(v.strip()) for v in vals.split(",")]))
+
+        names = [p[0] for p in param_sets]
+        value_lists = [p[1] for p in param_sets]
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        total = 1
+        for vl in value_lists:
+            total *= len(vl)
+        console.print(f"[bold]Grid sweep:[/bold] {names} = {[[v for v in vl] for vl in value_lists]} ({total} combinations)")
+
+        count = 0
+        for combo in product(*value_lists):
+            kwargs: dict = {
+                "model_name": model,
+                "temperature": temperature,
+                "noise": noise_amount,
+                "mix": mix,
+                "dims": dims,
+                "reverse": reverse,
+                "shuffle_chunks": shuffle_chunks,
+                "quantize": quantize_step,
+            }
+            for name, val in zip(names, combo):
+                kwargs[name] = val
+
+            filename_parts = [f"{n}_{v:.2f}" for n, v in zip(names, combo)]
+            filename = "__".join(filename_parts) + ".wav"
+
+            result = self.process(audio, **kwargs)
+            for _ in range(repeat - 1):
+                result = self.process(result, **{**kwargs, "mix": 1.0})
+            save_audio(result, output_dir / filename)
+            count += 1
+            console.print(f"  [{count}/{total}] [green]Saved:[/green] {output_dir / filename}")
+
+    def _register_extra_commands(self, app: typer.Typer) -> None:
+        """Register encode/decode subcommands for latent export/import."""
+
+        @app.command(name="encode", help="Encode audio to latent representation (for cross-model decode)")
+        def encode_command(
+            input_file: Annotated[
+                Path, typer.Argument(help="Input audio file")
+            ],
+            output: Annotated[
+                Path, typer.Option("--output", "-o", help="Output .pt file path")
+            ] = Path("latent.pt"),
+            model: Annotated[
+                str,
+                typer.Option("--model", "-m", help=f"Pretrained RAVE model. Choices: {', '.join(AVAILABLE_MODELS)}"),
+            ] = "percussion",
+        ) -> None:
+            if not input_file.exists():
+                console.print(f"[red]File not found: {input_file}[/red]")
+                raise typer.Exit(1)
+            console.print(f"[bold]Encoding:[/bold] {input_file} -> {model}")
+            audio = load_audio(input_file)
+            z, sr = self.encode_latent(audio, model)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            torch.save({"z": z, "sample_rate": sr, "model": model}, output)
+            console.print(f"[green]Saved:[/green] {output} (latent: {list(z.shape)}, sr={sr})")
+
+        @app.command(name="decode", help="Decode a latent file through a RAVE model (cross-model transfer)")
+        def decode_command(
+            latent_file: Annotated[
+                Path, typer.Argument(help="Latent .pt file from 'rotten encode'")
+            ],
+            output: Annotated[
+                Path, typer.Option("--output", "-o", help="Output audio file path")
+            ] = Path("decoded.wav"),
+            model: Annotated[
+                Optional[str],
+                typer.Option("--model", "-m", help="RAVE model to decode through. Defaults to the model used for encoding"),
+            ] = None,
+            temperature: Annotated[
+                float, typer.Option("--temperature", "-t", help="Scale latent vectors")
+            ] = 1.0,
+            noise_amount: Annotated[
+                float, typer.Option("--noise", "-n", help="Gaussian noise added to latent space")
+            ] = 0.0,
+            dims: Annotated[
+                Optional[str], typer.Option("--dims", "-d", help="Latent dims to manipulate")
+            ] = None,
+            reverse: Annotated[
+                bool, typer.Option("--reverse", "-r", help="Flip latent time axis")
+            ] = False,
+            shuffle_chunks: Annotated[
+                int, typer.Option("--shuffle", help="Shuffle latent in chunks of N frames")
+            ] = 0,
+            quantize_step: Annotated[
+                float, typer.Option("--quantize", "-q", help="Snap latent values to grid")
+            ] = 0.0,
+        ) -> None:
+            if not latent_file.exists():
+                console.print(f"[red]File not found: {latent_file}[/red]")
+                raise typer.Exit(1)
+
+            data = torch.load(latent_file, map_location="cpu", weights_only=True)
+            z = data["z"]
+            sr = data.get("sample_rate", 44100)
+            src_model = data.get("model", "unknown")
+            decode_model = model or src_model
+
+            console.print(
+                f"[bold]Decoding:[/bold] {latent_file} (encoded with {src_model}) -> {decode_model} "
+                f"temp={temperature} noise={noise_amount}"
+            )
+            result = self.decode_latent(
+                z, decode_model, sr,
+                temperature=temperature,
+                noise=noise_amount,
+                dims=dims,
+                reverse=reverse,
+                shuffle_chunks=shuffle_chunks,
+                quantize=quantize_step,
+            )
+            save_audio(result, output)
+            console.print(f"[green]Saved:[/green] {output} ({result.duration:.1f}s)")
 
     def _run_sweep(
         self,
