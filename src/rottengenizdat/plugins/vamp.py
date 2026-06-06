@@ -11,6 +11,7 @@ from rich.console import Console
 
 from rottengenizdat.core import AudioBuffer, load_audio, save_audio
 from rottengenizdat.plugin import AudioEffect
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 console = Console()
 
@@ -99,6 +100,7 @@ def _load_iface() -> "Interface":
         coarse2fine_ckpt=c2f_path,
         codec_ckpt=codec_path,
         wavebeat_ckpt=None,
+        device="cpu",
     )
 
 
@@ -142,26 +144,44 @@ class VampEffect(AudioEffect):
         samples = audio.to_mono().samples
         sig = at.AudioSignal(samples, audio.sample_rate)
 
-        with torch.no_grad():
-            codes = iface.encode(sig)
-            mask = iface.build_mask(
-                codes,
-                sig,
-                rand_mask_intensity=rand_intensity,
-                prefix_s=prefix_s,
-                suffix_s=suffix_s,
-                periodic_prompt=periodic_prompt if periodic_prompt > 0 else 1,
-                upper_codebook_mask=upper_codebook_mask,
+        if sig.signal_duration > 30:
+            console.print(
+                f"[yellow]Warning: {sig.signal_duration:.0f}s input will take a while on CPU. "
+                f"Try a shorter clip first.[/yellow]"
             )
-            output_codes = iface.vamp(
-                codes,
-                mask,
-                return_mask=False,
-                temperature=temperature,
-                feedback_steps=feedback_steps,
-                typical_filtering=typical_filtering,
-            )
-            out_sig = iface.decode(output_codes)
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            with torch.no_grad():
+                progress.add_task("Encoding...", total=None)
+                codes = iface.encode(sig)
+
+                progress.add_task("Building mask...", total=None)
+                mask = iface.build_mask(
+                    codes,
+                    sig,
+                    rand_mask_intensity=rand_intensity,
+                    prefix_s=prefix_s,
+                    suffix_s=suffix_s,
+                    periodic_prompt=periodic_prompt if periodic_prompt > 0 else 1,
+                    upper_codebook_mask=upper_codebook_mask,
+                )
+
+                progress.add_task("Vamping (this is the slow part)...", total=None)
+                output_codes = iface.vamp(
+                    codes,
+                    mask,
+                    return_mask=False,
+                    temperature=temperature,
+                    feedback_steps=feedback_steps,
+                    typical_filtering=typical_filtering,
+                )
+
+                progress.add_task("Decoding...", total=None)
+                out_sig = iface.decode(output_codes)
 
         # AudioSignal.audio_data is (batch, channels, samples) — AudioBuffer
         # expects (channels, samples), so squeeze the batch dim.
