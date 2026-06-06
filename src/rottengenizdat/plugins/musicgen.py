@@ -77,13 +77,22 @@ MODEL_IDS = {
 
 def _load_model(model_size: str = "small"):
     """Load MusicGen model and processor from HuggingFace."""
-    from transformers import MusicgenForConditionalGeneration, AutoProcessor
+    from transformers import AutoProcessor
 
     if model_size not in MODEL_IDS:
         raise ValueError(f"Unknown model size '{model_size}'. Choose: {', '.join(MODEL_IDS)}")
 
     model_id = MODEL_IDS[model_size]
-    model = MusicgenForConditionalGeneration.from_pretrained(model_id)
+
+    if model_size == "melody":
+        from transformers import MusicgenMelodyForConditionalGeneration
+
+        model = MusicgenMelodyForConditionalGeneration.from_pretrained(model_id)
+    else:
+        from transformers import MusicgenForConditionalGeneration
+
+        model = MusicgenForConditionalGeneration.from_pretrained(model_id)
+
     processor = AutoProcessor.from_pretrained(model_id)
     return model, processor, model_id
 
@@ -141,8 +150,19 @@ class MusicGenEffect(AudioEffect):
         if top_p > 0.0:
             gen_kwargs["top_p"] = top_p
 
-        # Melody conditioning
+        # Melody conditioning — only needs a short clip for chromagram
         if model_size == "melody" and audio is not None:
+            # Warn and auto-trim long inputs (chromagram extraction is slow)
+            if audio.duration > 30:
+                console.print(
+                    f"[yellow]Input is {audio.duration:.0f}s — trimming to first 30s "
+                    f"for chromagram extraction. Use a shorter clip for faster results.[/yellow]"
+                )
+                audio = AudioBuffer(
+                    samples=audio.samples[:, :int(30 * audio.sample_rate)],
+                    sample_rate=audio.sample_rate,
+                )
+
             inputs = processor(
                 audio=audio.to_mono().samples.squeeze(0).numpy(),
                 sampling_rate=audio.sample_rate,
