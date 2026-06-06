@@ -25,6 +25,11 @@ _FLAG_MAP: dict[str, tuple[str, str]] = {
     "shuffle": ("shuffle_chunks", "int"),
     "q": ("quantize", "float"),
     "quantize": ("quantize", "float"),
+    "b": ("bandwidth", "float"),
+    "bandwidth": ("bandwidth", "float"),
+    "drop-ratio": ("drop_ratio", "float"),
+    "keep-first": ("keep_first", "int"),
+    "scramble": ("scramble", "bool"),
 }
 
 
