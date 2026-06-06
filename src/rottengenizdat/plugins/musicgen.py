@@ -163,8 +163,11 @@ class MusicGenEffect(AudioEffect):
                     sample_rate=audio.sample_rate,
                 )
 
+            # Processor expects a 1D waveform tensor: (samples,)
+            mono = audio.to_mono()
+            waveform = mono.samples.squeeze(0)  # (samples,) 1D tensor
             inputs = processor(
-                audio=audio.to_mono().samples.squeeze(0).numpy(),
+                audio=waveform,
                 sampling_rate=audio.sample_rate,
                 text=[prompt],
                 return_tensors="pt",
