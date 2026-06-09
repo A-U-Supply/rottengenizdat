@@ -22,3 +22,13 @@ jobs:
         with:
           push: true
           tags: ghcr.io/a-u-supply/rottengenizdat:latest
+      # The deploy key is locked to this one command via a forced-command
+      # entry in the host's authorized_keys, so the ssh argument is advisory.
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DOKKU_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 204.168.201.89 >> ~/.ssh/known_hosts
+      - name: Pull image on prod host
+        run: ssh dokku@204.168.201.89 run au-supply .venv/bin/python manage.py docker-pull-rottengenizdat
